@@ -24,14 +24,13 @@ dataset:
   # file_path: "data/prompts.txt"
 
 # Models to sample from (list of arbitrary length)
+# Model IDs from OpenRouter: https://openrouter.ai/models
 models:
-  - name: "gpt-4"
-    model_id: "openai/gpt-4"
-  - name: "claude-3.5-sonnet"
-    model_id: "anthropic/claude-3-5-sonnet"
+  - "openai/gpt-4"
+  - "anthropic/claude-3-5-sonnet"
   # Add more models as needed:
-  # - name: "gpt-3.5-turbo"
-  #   model_id: "openai/gpt-3.5-turbo"
+  # - "openai/gpt-3.5-turbo"
+  # - "meta-llama/llama-3-70b-instruct"
 
 # Sampling parameters
 sampling:

@@ -48,10 +48,8 @@ dataset:
 
 # Models to sample from (list of arbitrary length)
 models:
-  - name: "gpt-4"
-    model_id: "openai/gpt-4"
-  - name: "claude-3.5-sonnet"
-    model_id: "anthropic/claude-3-5-sonnet"
+  - "openai/gpt-4"
+  - "anthropic/claude-3-5-sonnet"
   # Add more models as needed
 
 # Sampling parameters
