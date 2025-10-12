@@ -46,12 +46,13 @@ dataset:
   num_prompts: 10                    # Number of prompts to sample
   seed: 42                           # For reproducibility
 
-# Models to compare
+# Models to sample from (list of arbitrary length)
 models:
-  model_1:
+  - name: "gpt-4"
     model_id: "openai/gpt-4"
-  model_2:
+  - name: "claude-3.5-sonnet"
     model_id: "anthropic/claude-3-5-sonnet"
+  # Add more models as needed
 
 # Sampling parameters
 sampling:
