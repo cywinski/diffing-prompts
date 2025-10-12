@@ -16,8 +16,7 @@ dataset:
   # Optional filters
   min_length: 1                  # Minimum prompt length in characters
   max_length: 500                 # Maximum prompt length in characters
-  language: "en"                  # Language code (for WildChat)
-  trust_remote_code: true         # Required for some datasets
+  language: "English"                  # Language code (for WildChat)
 
   # For file source (uncomment if using)
   # source: "file"
