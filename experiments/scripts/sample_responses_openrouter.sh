@@ -6,10 +6,10 @@
 set -e  # Exit on error
 
 # Configuration
-CONFIG_FILE="experiments/configs/2025-10-12_sample_responses.yaml"
+CONFIG_FILE="experiments/configs/sample_responses_openrouter.yaml"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-OUTPUT_DIR="experiments/results/2025-10-12_sample_responses_${TIMESTAMP}"
-LOG_FILE="experiments/logs/2025-10-12_sample_responses_${TIMESTAMP}.log"
+OUTPUT_DIR="experiments/results/sample_responses_openrouter_${TIMESTAMP}"
+LOG_FILE="experiments/logs/sample_responses_openrouter_${TIMESTAMP}.log"
 # Create directories
 mkdir -p experiments/logs
 mkdir -p experiments/results

@@ -1,0 +1,45 @@
+# Configuration for sampling LLM responses via OpenRouter API
+# Experiment: Find maximally different responses between two models
+
+# Dataset configuration
+dataset:
+  source: "huggingface"           # Options: "huggingface", "file"
+  dataset_name: "allenai/WildChat"  # HuggingFace dataset identifier
+  split: "train"                  # Dataset split
+  num_prompts: 2                 # Number of prompts to sample
+  seed: 42                        # Random seed for reproducibility
+
+  # Prompt extraction
+  use_wildchat_format: true       # Use special WildChat conversation extractor
+  # prompt_field: "text"          # Field name if not using custom extractor
+
+  # Optional filters
+  min_length: 1                  # Minimum prompt length in characters
+  max_length: 500                 # Maximum prompt length in characters
+  language: "English"                  # Language code (for WildChat)
+
+  # For file source (uncomment if using)
+  # source: "file"
+  # file_path: "data/prompts.txt"
+
+# Models to sample from (list of arbitrary length)
+# Model IDs from OpenRouter: https://openrouter.ai/models
+models:
+  - "google/gemma-2-9b-it"
+  # Add more models as needed:
+  # - "openai/gpt-3.5-turbo"
+  # - "meta-llama/llama-3-70b-instruct"
+
+# Sampling parameters
+sampling:
+  num_samples_per_prompt: 5  # Number of samples per prompt per model
+  max_tokens: 100            # Maximum tokens to generate
+  temperature: 1.0           # Sampling temperature
+  top_p: 1.0                 # Nucleus sampling parameter
+  logprobs: true             # Whether to return log probabilities
+  top_logprobs: 5            # Number of top logprobs to return per token
+
+# Output configuration
+output:
+  base_dir: "experiments/results"
+  experiment_name: "sample_responses"

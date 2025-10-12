@@ -195,10 +195,74 @@ class OpenRouterClient:
         return results
 
 
+def filter_response_fields(response: Dict[str, Any]) -> Dict[str, Any]:
+    """Filter out unnecessary fields from OpenRouter API responses.
+
+    Removes provider-specific metadata and redundant information to reduce
+    file size and improve readability.
+
+    Args:
+        response: Raw response dictionary from OpenRouter API.
+
+    Returns:
+        Filtered response dictionary with only essential fields.
+    """
+    filtered = {}
+
+    # Keep model field at top level
+    if "model" in response:
+        filtered["model"] = response["model"]
+
+    # Keep choices but filter within them
+    if "choices" in response:
+        filtered["choices"] = []
+        for choice in response["choices"]:
+            filtered_choice = {}
+
+            # Keep message content
+            if "message" in choice:
+                filtered_choice["message"] = choice["message"]
+
+            # Keep finish_reason
+            if "finish_reason" in choice:
+                filtered_choice["finish_reason"] = choice["finish_reason"]
+
+            # Keep logprobs but filter bytes
+            if "logprobs" in choice and choice["logprobs"]:
+                filtered_choice["logprobs"] = {}
+                if "content" in choice["logprobs"]:
+                    filtered_content = []
+                    for token_data in choice["logprobs"]["content"]:
+                        filtered_token = {
+                            "token": token_data["token"],
+                            "logprob": token_data["logprob"],
+                        }
+                        # Filter top_logprobs
+                        if "top_logprobs" in token_data:
+                            filtered_token["top_logprobs"] = [
+                                {
+                                    "token": top_token["token"],
+                                    "logprob": top_token["logprob"],
+                                }
+                                for top_token in token_data["top_logprobs"]
+                            ]
+                        filtered_content.append(filtered_token)
+                    filtered_choice["logprobs"]["content"] = filtered_content
+
+            filtered["choices"].append(filtered_choice)
+
+    # Keep usage stats if present
+    if "usage" in response:
+        filtered["usage"] = response["usage"]
+
+    return filtered
+
+
 def save_samples_to_json(
     samples: List[Dict[str, Any]],
     output_path: str,
     indent: int = 2,
+    filter_fields: bool = True,
 ) -> None:
     """Save sampled responses to a JSON file.
 
@@ -206,10 +270,27 @@ def save_samples_to_json(
         samples: List of sample dictionaries from sample_prompts_batch.
         output_path: Path to output JSON file.
         indent: JSON indentation level.
+        filter_fields: If True, filter out unnecessary fields from responses.
     """
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
+    # Filter samples if requested
+    if filter_fields:
+        filtered_samples = []
+        for sample in samples:
+            filtered_sample = {
+                "prompt": sample["prompt"],
+                "model": sample["model"],
+                "responses": [
+                    filter_response_fields(resp) for resp in sample["responses"]
+                ],
+            }
+            filtered_samples.append(filtered_sample)
+        samples_to_save = filtered_samples
+    else:
+        samples_to_save = samples
+
     with open(output_path, "w") as f:
-        json.dump(samples, f, indent=indent)
+        json.dump(samples_to_save, f, indent=indent)
 
     print(f"Saved {len(samples)} prompts with samples to {output_path}")
