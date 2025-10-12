@@ -1,0 +1,52 @@
+[
+  {
+    "prompt": "Write a very long, elaborate, descriptive and detailed shooting script, including a background and dialogues, for a John Waters-inspired film scene that includes a character preparing omelettes. You are free to choose the setting, scenario (it should make sense) and characters (give them names, and describe their appearance and clothing in detail).",
+    "model": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "responses": []
+  },
+  {
+    "prompt": "what are you?",
+    "model": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "responses": []
+  },
+  {
+    "prompt": "Write an engaging and a constructive article for my Morocco travel guide book on \"How to use a Tram\" with humanlike style, non repetitive phrases and avoidance of unnatural sentences.",
+    "model": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "responses": []
+  },
+  {
+    "prompt": "Write an engaging and a constructive article for my Morocco travel guide book on \"The best way to Ride the bus\" with humanlike style, non repetitive phrases and avoidance of unnatural sentences.",
+    "model": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "responses": []
+  },
+  {
+    "prompt": "Write a very long, elaborate, descriptive and detailed shooting script, including a background and dialogues, for a 1990s Sitcom comic scene that centers around a food fight between female characters . You are free to choose the setting, scenario (it should make sense) and characters (give them names, and describe their appearance and clothing in detail).",
+    "model": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "responses": []
+  },
+  {
+    "prompt": "Write an engaging and a constructive article for my Morocco travel guide book on \"How to go to the Airport\" with humanlike style, non repetitive phrases and avoidance of unnatural sentences.",
+    "model": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "responses": []
+  },
+  {
+    "prompt": "Write a very long, elaborate, descriptive and detailed shooting script, including a background and dialogues, for a Telenovela comic scene that centers around a tit-for-tat food fight between female characters . You are free to choose the setting, scenario (it should make sense) and characters (give them names, and describe their appearance and clothing in detail).",
+    "model": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "responses": []
+  },
+  {
+    "prompt": "Write an engaging and a constructive article for my Morocco travel guide book on \"The best time to visit Morocco\" with humanlike style, non repetitive phrases and avoidance of unnatural sentences.",
+    "model": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "responses": []
+  },
+  {
+    "prompt": "Write a long story about Andrew and Tristan Tate scavenging for supplies in Siena Italy during a the walking dead zombie outbreak, use a writing style similar to the one Steven king uses in his books, esalt the masculine brotherhood between the two ",
+    "model": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "responses": []
+  },
+  {
+    "prompt": "Write a very long, elaborate, descriptive and detailed shooting script, including a background and dialogues, for a Telenovela comic scene that centers around a tit-for-tat food fight between female characters who pour the items over each other's heads. You are free to choose the setting, scenario (it should make sense) and characters (give them names, and describe their appearance and clothing in detail).",
+    "model": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "responses": []
+  }
+]
