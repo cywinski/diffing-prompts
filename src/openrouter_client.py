@@ -152,7 +152,9 @@ class OpenRouterClient:
         logprobs: bool = True,
         top_logprobs: int = 5,
     ) -> List[Dict[str, Any]]:
-        """Sample multiple responses for multiple prompts.
+        """Sample multiple responses for multiple prompts concurrently.
+
+        All prompts are processed in parallel for maximum efficiency.
 
         Args:
             prompts: List of input prompts.
@@ -172,10 +174,9 @@ class OpenRouterClient:
                 "responses": List[Dict],
             }
         """
-        results = []
-
-        for prompt in tqdm(prompts, desc=f"Sampling prompts ({model})", unit="prompt"):
-            responses = await self.sample_multiple_concurrent(
+        # Create tasks for all prompts concurrently
+        tasks = [
+            self.sample_multiple_concurrent(
                 prompt=prompt,
                 model=model,
                 num_samples=num_samples_per_prompt,
@@ -185,6 +186,19 @@ class OpenRouterClient:
                 logprobs=logprobs,
                 top_logprobs=top_logprobs,
             )
+            for prompt in prompts
+        ]
+
+        # Execute all tasks concurrently with progress bar
+        print(f"Sampling {len(prompts)} prompts with {num_samples_per_prompt} samples each ({model})...")
+        all_responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Build results list, handling any exceptions
+        results = []
+        for i, (prompt, responses) in enumerate(zip(prompts, all_responses)):
+            if isinstance(responses, Exception):
+                print(f"Warning: Prompt {i} failed with error: {responses}")
+                responses = []
 
             results.append({
                 "prompt": prompt,
