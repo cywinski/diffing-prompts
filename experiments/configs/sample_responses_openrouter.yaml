@@ -6,7 +6,7 @@ dataset:
   source: "huggingface"           # Options: "huggingface", "file"
   dataset_name: "allenai/WildChat"  # HuggingFace dataset identifier
   split: "train"                  # Dataset split
-  num_prompts: 1000                 # Number of prompts to sample
+  num_prompts: 2            # Number of prompts to sample
   seed: 42                        # Random seed for reproducibility
 
   # Prompt extraction

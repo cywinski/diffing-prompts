@@ -2,8 +2,8 @@
 # ABOUTME: Supports concurrent requests and extracting logprobs from responses.
 
 import asyncio
-import json
 import os
+import pickle
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -152,9 +152,7 @@ class OpenRouterClient:
         logprobs: bool = True,
         top_logprobs: int = 5,
     ) -> List[Dict[str, Any]]:
-        """Sample multiple responses for multiple prompts concurrently.
-
-        All prompts are processed in parallel for maximum efficiency.
+        """Sample multiple responses for multiple prompts.
 
         Args:
             prompts: List of input prompts.
@@ -174,9 +172,10 @@ class OpenRouterClient:
                 "responses": List[Dict],
             }
         """
-        # Create tasks for all prompts concurrently
-        tasks = [
-            self.sample_multiple_concurrent(
+        results = []
+
+        for prompt in tqdm(prompts, desc=f"Sampling prompts ({model})", unit="prompt"):
+            responses = await self.sample_multiple_concurrent(
                 prompt=prompt,
                 model=model,
                 num_samples=num_samples_per_prompt,
@@ -186,19 +185,6 @@ class OpenRouterClient:
                 logprobs=logprobs,
                 top_logprobs=top_logprobs,
             )
-            for prompt in prompts
-        ]
-
-        # Execute all tasks concurrently with progress bar
-        print(f"Sampling {len(prompts)} prompts with {num_samples_per_prompt} samples each ({model})...")
-        all_responses = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Build results list, handling any exceptions
-        results = []
-        for i, (prompt, responses) in enumerate(zip(prompts, all_responses)):
-            if isinstance(responses, Exception):
-                print(f"Warning: Prompt {i} failed with error: {responses}")
-                responses = []
 
             results.append({
                 "prompt": prompt,
@@ -272,18 +258,16 @@ def filter_response_fields(response: Dict[str, Any]) -> Dict[str, Any]:
     return filtered
 
 
-def save_samples_to_json(
+def save_samples_to_pickle(
     samples: List[Dict[str, Any]],
     output_path: str,
-    indent: int = 2,
     filter_fields: bool = True,
 ) -> None:
-    """Save sampled responses to a JSON file.
+    """Save sampled responses to a pickle file.
 
     Args:
         samples: List of sample dictionaries from sample_prompts_batch.
-        output_path: Path to output JSON file.
-        indent: JSON indentation level.
+        output_path: Path to output pickle file.
         filter_fields: If True, filter out unnecessary fields from responses.
     """
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -304,7 +288,7 @@ def save_samples_to_json(
     else:
         samples_to_save = samples
 
-    with open(output_path, "w") as f:
-        json.dump(samples_to_save, f, indent=indent)
+    with open(output_path, "wb") as f:
+        pickle.dump(samples_to_save, f)
 
     print(f"Saved {len(samples)} prompts with samples to {output_path}")

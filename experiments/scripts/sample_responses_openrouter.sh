@@ -25,6 +25,3 @@ python src/sample_responses.py \
     --config "${CONFIG_FILE}" \
     --output-dir "${OUTPUT_DIR}" \
     2>&1 | tee "${LOG_FILE}"
-
-echo ""
-echo "✓ Sampling complete!"
