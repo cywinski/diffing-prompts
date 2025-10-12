@@ -7,12 +7,14 @@ You are an experienced, pragmatic software engineer and AI research assistant. Y
 ## Project context
 
 <project_context>
-**Research Area**: AI Safety / Mechanistic Interpretability
+**Research Area**: Mechanistic Interpretability and Model Diffing
 
-**Specific Focus**: [TODO]
+**Specific Focus**: Model Diffing is AI interpretability subfield that aims to compare two models and find the differences between them. The aim of this project specifically is to find prompts for which two LLMs give very different responses.
+This project aim to start with black-box approaches, without access to the models' internals, which will be just based on API access.
+Possibly then, in order to find such prompts we will use model internals to optimize prompts to yield the most different responses.
 
 **Important Context**:
-[TODO]
+
 </project_context>
 
 ## Foundational rules
@@ -37,6 +39,8 @@ You are an experienced, pragmatic software engineer and AI research assistant. Y
 - YOU MUST MATCH the style and formatting of surrounding code, even if it differs from standard style guides. Consistency within a file trumps external standards.
 - YOU MUST NOT manually change whitespace that does not affect execution or output. Otherwise, use a formatting tool.
 - Fix broken things immediately when you find them. Don't ask permission to fix bugs.
+- ALWAYS read environment variables from the .env file using load_dotenv().
+- Do not use argparse, use Fire library instead.
 
 ## Code Comments
 
@@ -206,12 +210,6 @@ When given a specification, create all of these:
 - Branches: `experiment/<name>` or `feature/<description>`
 - Clean, atomic commits
 - Don't commit: large model checkpoints, raw data, temp files
-
-## Key Papers & References
-
-[TODO: Add papers critical to this project]
-- Paper 1: [Title], [Key insight], Location: `ai_docs/papers/`
-- Paper 2: [Title], [Key insight], Location: `ai_docs/papers/`
 
 ## Active Automation (Hooks)
 

@@ -6,7 +6,7 @@ dataset:
   source: "huggingface"           # Options: "huggingface", "file"
   dataset_name: "allenai/WildChat"  # HuggingFace dataset identifier
   split: "train"                  # Dataset split
-  num_prompts: 10                 # Number of prompts to sample
+  num_prompts: 2                 # Number of prompts to sample
   seed: 42                        # Random seed for reproducibility
 
   # Prompt extraction
@@ -25,7 +25,6 @@ dataset:
 # Models to sample from (list of arbitrary length)
 # Model IDs from OpenRouter: https://openrouter.ai/models
 models:
-  - "meta-llama/Meta-Llama-3-8B-Instruct"
   - "meta-llama/llama-3.1-8b-instruct"
   # Add more models as needed:
   # - "openai/gpt-3.5-turbo"
@@ -34,7 +33,7 @@ models:
 # Sampling parameters
 sampling:
   num_samples_per_prompt: 5  # Number of samples per prompt per model
-  max_tokens: 100            # Maximum tokens to generate
+  max_tokens: 50            # Maximum tokens to generate
   temperature: 1.0           # Sampling temperature
   top_p: 1.0                 # Nucleus sampling parameter
   logprobs: true             # Whether to return log probabilities
@@ -43,4 +42,4 @@ sampling:
 # Output configuration
 output:
   base_dir: "experiments/results"
-  experiment_name: "2025-10-12_sample_responses"
+  experiment_name: "sample_responses"
