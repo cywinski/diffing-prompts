@@ -3,17 +3,24 @@
 
 # Dataset configuration
 dataset:
-  source: "wildchat"  # Options: "wildchat", "file"
-  split: "train"      # Dataset split
-  num_prompts: 10     # Number of prompts to sample
-  seed: 42            # Random seed for reproducibility
+  source: "huggingface"           # Options: "huggingface", "file"
+  dataset_name: "allenai/WildChat"  # HuggingFace dataset identifier
+  split: "train"                  # Dataset split
+  num_prompts: 10                 # Number of prompts to sample
+  seed: 42                        # Random seed for reproducibility
 
-  # Optional filters for WildChat
-  min_length: 50      # Minimum prompt length in characters
-  max_length: 500     # Maximum prompt length in characters
-  language: "en"      # Language code (e.g., "en" for English)
+  # Prompt extraction
+  use_wildchat_format: true       # Use special WildChat conversation extractor
+  # prompt_field: "text"          # Field name if not using custom extractor
+
+  # Optional filters
+  min_length: 50                  # Minimum prompt length in characters
+  max_length: 500                 # Maximum prompt length in characters
+  language: "en"                  # Language code (for WildChat)
+  trust_remote_code: true         # Required for some datasets
 
   # For file source (uncomment if using)
+  # source: "file"
   # file_path: "data/prompts.txt"
 
 # Models to sample from

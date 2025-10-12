@@ -7,7 +7,7 @@ This guide explains how to sample multiple responses from LLMs using the OpenRou
 The implementation supports:
 - Concurrent sampling of multiple responses for the same prompt
 - Multiple LLM models via OpenRouter API
-- WildChat dataset integration
+- Generic HuggingFace dataset loader (including WildChat)
 - Configurable sampling parameters
 - JSON output with logprobs for analysis
 
@@ -39,9 +39,12 @@ Edit [experiments/configs/2025-10-12_sample_responses.yaml](../../experiments/co
 ```yaml
 # Dataset configuration
 dataset:
-  source: "wildchat"  # or "file"
-  num_prompts: 10     # Number of prompts to sample
-  seed: 42            # For reproducibility
+  source: "huggingface"              # Options: "huggingface" or "file"
+  dataset_name: "allenai/WildChat"   # HuggingFace dataset identifier
+  use_wildchat_format: true          # Use custom WildChat extractor
+  # prompt_field: "text"             # Or specify field name directly
+  num_prompts: 10                    # Number of prompts to sample
+  seed: 42                           # For reproducibility
 
 # Models to compare
 models:
@@ -55,6 +58,35 @@ sampling:
   num_samples_per_prompt: 5  # Samples per prompt
   max_tokens: 100
   temperature: 1.0
+```
+
+### Using Different Datasets
+
+The loader is generic and works with any HuggingFace dataset:
+
+**Simple text dataset:**
+```yaml
+dataset:
+  source: "huggingface"
+  dataset_name: "your-org/your-dataset"
+  prompt_field: "text"  # Field containing prompts
+```
+
+**Nested field access:**
+```yaml
+dataset:
+  source: "huggingface"
+  dataset_name: "some-dataset"
+  prompt_field: "data.0.content"  # Use dot notation for nested fields
+```
+
+**WildChat with conversation format:**
+```yaml
+dataset:
+  source: "huggingface"
+  dataset_name: "allenai/WildChat"
+  use_wildchat_format: true  # Uses custom extractor for conversations
+  language: "en"             # Optional language filter
 ```
 
 ### Available Model IDs
@@ -77,7 +109,7 @@ Execute the bash script:
 ```
 
 This will:
-1. Load prompts from WildChat dataset
+1. Load prompts from the configured HuggingFace dataset
 2. Sample responses from both models concurrently
 3. Save results to JSON files with timestamp
 4. Create logs in `experiments/logs/`
