@@ -16,7 +16,7 @@ from prompts_loader import (
     wildchat_language_filter,
     wildchat_prompt_extractor,
 )
-from openrouter_client import OpenRouterClient, save_samples_to_json
+from openrouter_client import OpenRouterClient, save_samples_to_pickle
 
 
 def load_config(config_path: str) -> dict:
@@ -56,7 +56,7 @@ async def sample_responses_for_model(
         top_p: Nucleus sampling parameter.
         logprobs: Whether to return log probabilities.
         top_logprobs: Number of top logprobs to return per token.
-        output_path: Path to save JSON output.
+        output_path: Path to save pickle output.
         api_key: Optional API key override.
     """
     print(f"\n{'='*60}")
@@ -78,7 +78,7 @@ async def sample_responses_for_model(
         top_logprobs=top_logprobs,
     )
 
-    save_samples_to_json(samples, output_path)
+    save_samples_to_pickle(samples, output_path)
     print(f"✓ Completed sampling for {model}")
 
 
@@ -167,7 +167,7 @@ async def main():
     for model_id in models:
         # Derive filename-safe name from model_id (e.g., "openai/gpt-4" -> "openai_gpt-4")
         model_name = model_id.replace("/", "_")
-        output_path = output_dir / f"{model_name}_{timestamp}.json"
+        output_path = output_dir / f"{model_name}_{timestamp}.pkl"
 
         task = sample_responses_for_model(
             prompts=prompts,
