@@ -14,7 +14,7 @@ dataset:
   # prompt_field: "text"          # Field name if not using custom extractor
 
   # Optional filters
-  min_length: 50                  # Minimum prompt length in characters
+  min_length: 1                  # Minimum prompt length in characters
   max_length: 500                 # Maximum prompt length in characters
   language: "en"                  # Language code (for WildChat)
   trust_remote_code: true         # Required for some datasets
@@ -26,8 +26,8 @@ dataset:
 # Models to sample from (list of arbitrary length)
 # Model IDs from OpenRouter: https://openrouter.ai/models
 models:
-  - "openai/gpt-4"
-  - "anthropic/claude-3-5-sonnet"
+  - "meta-llama/Meta-Llama-3-8B-Instruct"
+  - "meta-llama/llama-3.1-8b-instruct"
   # Add more models as needed:
   # - "openai/gpt-3.5-turbo"
   # - "meta-llama/llama-3-70b-instruct"
