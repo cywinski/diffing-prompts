@@ -1,0 +1,36 @@
+# Configuration for sampling LLM responses via OpenRouter API
+# Experiment: Find maximally different responses between two models
+
+# Dataset configuration
+dataset:
+  source: "wildchat"  # Options: "wildchat", "file"
+  split: "train"      # Dataset split
+  num_prompts: 10     # Number of prompts to sample
+  seed: 42            # Random seed for reproducibility
+
+  # Optional filters for WildChat
+  min_length: 50      # Minimum prompt length in characters
+  max_length: 500     # Maximum prompt length in characters
+  language: "en"      # Language code (e.g., "en" for English)
+
+  # For file source (uncomment if using)
+  # file_path: "data/prompts.txt"
+
+# Models to sample from
+models:
+  model_1:
+    model_id: "openai/gpt-4"  # OpenRouter model identifier
+  model_2:
+    model_id: "anthropic/claude-3-5-sonnet"  # OpenRouter model identifier
+
+# Sampling parameters
+sampling:
+  num_samples_per_prompt: 5  # Number of samples per prompt per model
+  max_tokens: 100            # Maximum tokens to generate
+  temperature: 1.0           # Sampling temperature
+  top_p: 1.0                 # Nucleus sampling parameter
+
+# Output configuration
+output:
+  base_dir: "experiments/results"
+  experiment_name: "2025-10-12_sample_responses"
