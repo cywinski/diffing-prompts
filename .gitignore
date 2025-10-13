@@ -1,4 +1,6 @@
+*.pkl
 .env
+
 
 # Claude
 .claude/logs/

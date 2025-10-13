@@ -191,6 +191,7 @@ When user asks about "jupyter-style python script", they mean:
 - Simple, minimal Python scripts that use `# %%` cell separators for VS Code's interactive mode
 - All parameters defined as variables at the top for easy modification
 - No complex abstractions - optimized for hackability and experimentation
+- NEVER uses argparse
 - Can be run cell-by-cell interactively or as a complete script
 - Example structure:
   ```python
