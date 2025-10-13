@@ -1,4 +1,4 @@
-# AI Safety Research Project Configuration
+# Model Diffing via Finding Maximally Different Responses for the Same Prompt
 
 <role>
 You are an experienced, pragmatic software engineer and AI research assistant. You will design and implement experiments and research code for a project. You don't over-engineer a solution when a simple one is possible.
@@ -63,6 +63,7 @@ Possibly then, in order to find such prompts we will use model internals to opti
 ## Specification-Driven Experiment Workflow
 
 **User's workflow**:
+
 1. User writes a spec in `specs/` describing the experiment
 2. User says: "implement this spec"
 3. **You implement everything** (code, config, bash script)
@@ -72,22 +73,25 @@ Possibly then, in order to find such prompts we will use model internals to opti
 7. You commit with a clear message
 
 ### IMPORTANT: Committing Behavior
+
 - **DO NOT commit automatically** after implementing code
 - **ONLY commit when user explicitly asks** (e.g., "commit this", "commit the changes")
 - User wants to review implementations before committing
 - When asked to commit, use conventional commit format: `feat:`, `fix:`, `exp:`, etc.
 
 ### Step 1: User Creates Specification
+
 User writes a spec in `specs/` describing what they want to test. The spec should include:
+
 - What they want to achieve
 - Data and model details
 - Hyperparameters to configure
 - Success criteria
-- What outputs to log
 
 Use `specs/experiment_template.md` as a starting point.
 
 ### Step 2: You Implement Everything
+
 When given a spec, you must create a complete, runnable experiment:
 
 1. **Implement the code** in `src/`:
@@ -113,7 +117,7 @@ When given a spec, you must create a complete, runnable experiment:
 
 ## Directory Structure
 
-```
+```bash
 .
 ├── data/              # Data files
 ├── src/               # Code files
@@ -161,7 +165,7 @@ Example structure:
 # Date: 2024-01-15
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-OUTPUT_DIR="experiments/results/l1_sweep_${TIMESTAMP}"
+OUTPUT_DIR="experiments/results/l1_sweep"
 LOG_FILE="experiments/logs/l1_sweep_${TIMESTAMP}.log"
 
 python scripts/train.py \
@@ -180,6 +184,27 @@ python scripts/train.py \
 - Type hints: Use for public APIs
 - Docstrings: Google style
 
+### Jupyter-Style Python Scripts
+
+When user asks about "jupyter-style python script", they mean:
+
+- Simple, minimal Python scripts that use `# %%` cell separators for VS Code's interactive mode
+- All parameters defined as variables at the top for easy modification
+- No complex abstractions - optimized for hackability and experimentation
+- Can be run cell-by-cell interactively or as a complete script
+- Example structure:
+  ```python
+  # %%
+  # Parameters
+  model_name = "gpt-4"
+  temperature = 0.7
+  max_tokens = 100
+
+  # %%
+  # Load data and run experiment
+  ...
+  ```
+
 ### File Organization
 
 - Source code → `src/` directory
@@ -189,9 +214,11 @@ python scripts/train.py \
 - NEVER create files in project root (except README.md, CLAUDE.md)
 
 ### Experiment Implementation Checklist
+
 When given a specification, create all of these:
 
 **Before user runs experiment**:
+
 - [ ] All code implemented in `src/` (no placeholders!)
 - [ ] YAML config in `experiments/configs/`
 - [ ] Bash script in `experiments/scripts/`
@@ -199,11 +226,13 @@ When given a specification, create all of these:
 - [ ] All dependencies documented
 
 **After user runs experiment** (user creates):
+
 - Results automatically saved to `experiments/results/`
 - Logs automatically saved to `experiments/logs/`
 - User adds notes in `experiments/results/notes.md`
 
 ### Git Workflow
+
 - Conventional commits: `feat:`, `fix:`, `docs:`, `exp:`
 - Branches: `experiment/<name>` or `feature/<description>`
 - Clean, atomic commits

@@ -3,7 +3,6 @@
 
 import argparse
 import asyncio
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -11,12 +10,12 @@ from typing import Optional
 import yaml
 from dotenv import load_dotenv
 
+from openrouter_client import OpenRouterClient, save_samples_to_pickle
 from prompts_loader import (
     PromptLoader,
     wildchat_language_filter,
     wildchat_prompt_extractor,
 )
-from openrouter_client import OpenRouterClient, save_samples_to_pickle
 
 
 def load_config(config_path: str) -> dict:
@@ -195,7 +194,7 @@ async def main():
     await asyncio.gather(*tasks)
 
     print(f"\n{'='*60}")
-    print(f"✓ All sampling complete!")
+    print("✓ All sampling complete!")
     print(f"Results saved to: {output_dir}")
     print(f"{'='*60}\n")
 
