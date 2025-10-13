@@ -6,7 +6,7 @@ dataset:
   source: "huggingface"           # Options: "huggingface", "file"
   dataset_name: "allenai/WildChat"  # HuggingFace dataset identifier
   split: "train"                  # Dataset split
-  num_prompts: 2            # Number of prompts to sample
+  num_prompts: 2000            # Number of prompts to sample
   seed: 42                        # Random seed for reproducibility
 
   # Prompt extraction
@@ -33,7 +33,7 @@ models:
 # Sampling parameters
 sampling:
   num_samples_per_prompt: 10  # Number of samples per prompt per model
-  max_tokens: 200            # Maximum tokens to generate
+  max_tokens: 500            # Maximum tokens to generate
   temperature: 1.0           # Sampling temperature
   top_p: 1.0                 # Nucleus sampling parameter
   logprobs: true             # Whether to return log probabilities

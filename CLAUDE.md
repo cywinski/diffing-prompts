@@ -94,12 +94,12 @@ When given a spec, you must create a complete, runnable experiment:
    - All necessary model/data/utility code
    - No mocks or placeholders - real implementations only
 
-2. **Create YAML config** in `experiments/configs/YYYY-MM-DD_name.yaml`:
+2. **Create YAML config** in `experiments/configs/`:
    - All hyperparameters from the spec
    - Use placeholder values that can be easily changed
    - Add comments explaining each parameter
 
-3. **Create bash script** in `experiments/scripts/run_YYYY-MM-DD_name.sh`:
+3. **Create bash script** in `experiments/scripts/`:
    - References the config file
    - Sets seed explicitly
    - Logs to `experiments/logs/` with timestamp in filename
@@ -152,7 +152,6 @@ When given a spec, you must create a complete, runnable experiment:
   - Be runnable without modification
   - Log outputs to timestamped files
   - Save results to timestamped directories
-- Naming: `run_YYYY-MM-DD_descriptive_name.sh`
 
 Example structure:
 
@@ -162,12 +161,11 @@ Example structure:
 # Date: 2024-01-15
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-OUTPUT_DIR="experiments/results/2024-01-15_l1_sweep_${TIMESTAMP}"
-LOG_FILE="experiments/logs/2024-01-15_l1_sweep_${TIMESTAMP}.log"
+OUTPUT_DIR="experiments/results/l1_sweep_${TIMESTAMP}"
+LOG_FILE="experiments/logs/l1_sweep_${TIMESTAMP}.log"
 
 python scripts/train.py \
   --config experiments/configs/sae_l1_sweep.yaml \
-  --seed 42 \
   --output_dir "${OUTPUT_DIR}" \
   2>&1 | tee "${LOG_FILE}"
 ```
@@ -195,27 +193,18 @@ When given a specification, create all of these:
 
 **Before user runs experiment**:
 - [ ] All code implemented in `src/` (no placeholders!)
-- [ ] YAML config in `experiments/configs/YYYY-MM-DD_name.yaml`
-- [ ] Bash script in `experiments/scripts/run_YYYY-MM-DD_name.sh`
+- [ ] YAML config in `experiments/configs/`
+- [ ] Bash script in `experiments/scripts/`
 - [ ] Script is executable and runnable immediately
 - [ ] All dependencies documented
 
 **After user runs experiment** (user creates):
-- Results automatically saved to `experiments/results/YYYY-MM-DD_name_TIMESTAMP/`
-- Logs automatically saved to `experiments/logs/YYYY-MM-DD_name_TIMESTAMP.log`
-- User adds notes in `experiments/results/YYYY-MM-DD_name_TIMESTAMP_notes.md`
+- Results automatically saved to `experiments/results/`
+- Logs automatically saved to `experiments/logs/`
+- User adds notes in `experiments/results/notes.md`
 
 ### Git Workflow
 - Conventional commits: `feat:`, `fix:`, `docs:`, `exp:`
 - Branches: `experiment/<name>` or `feature/<description>`
 - Clean, atomic commits
 - Don't commit: large model checkpoints, raw data, temp files
-
-## Active Automation (Hooks)
-
-Hooks configured in `.claude/settings.json`:
-- **No mock data validation**: Blocks placeholder functions and fake tests
-- **File organization**: Auto-redirects misplaced files to correct locations
-- **Python formatting**: Ruff format runs automatically on edit (falls back to Black)
-- **Python linting**: Ruff check runs before git commits (warns but doesn't block)
-- **Activity logging**: All actions logged to `~/.claude/logs/`
