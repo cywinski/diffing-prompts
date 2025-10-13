@@ -16,6 +16,8 @@ For each prompt calculate metric as follows:
 
 ## Data & Setup
 
+IMPORTANT!!: demonstration how to calculate metric per prompt is showcased in @kl_demo.py file. Follow it.
+
 **Saved 2 JSON files**
 
 ## What to Implement
