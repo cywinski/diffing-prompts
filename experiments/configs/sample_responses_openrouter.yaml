@@ -6,7 +6,7 @@ dataset:
   source: "huggingface"           # Options: "huggingface", "file"
   dataset_name: "allenai/WildChat"  # HuggingFace dataset identifier
   split: "train"                  # Dataset split
-  num_prompts: 1000            # Number of prompts to sample
+  num_prompts: 10            # Number of prompts to sample
   seed: 42                        # Random seed for reproducibility
 
   # Prompt extraction
@@ -25,14 +25,15 @@ dataset:
 # Models to sample from (list of arbitrary length)
 # Model IDs from OpenRouter: https://openrouter.ai/models
 models:
-  - "cloud"
+  - "google/gemma-2-9b-it"
+  # - "cloud"
   # Add more models as needed:
   # - "meta-llama/llama-3-70b-instruct"
 
 # API configuration
 api:
-  base_url: "https://48a2sytfam5f6y-8000.proxy.runpod.net/v1" # OpenRouter API base URL
-
+  # base_url: "https://48a2sytfam5f6y-8000.proxy.runpod.net/v1" # OpenRouter API base URL
+  base_url: "https://openrouter.ai/api/v1" # OpenRouter API base URL
 # Sampling parameters
 sampling:
   num_samples_per_prompt: 10  # Number of samples per prompt per model

@@ -1,18 +1,15 @@
 #!/bin/bash
-# Experiment: Sample multiple LLM responses via OpenRouter API
-# Date: 2025-10-12
-# Goal: Sample responses from two models for the same prompts to compare differences
 
 set -e  # Exit on error
 
 # Configuration
 CONFIG_FILE="experiments/configs/sample_responses_openrouter.yaml"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-OUTPUT_DIR="experiments/results/sample_responses_openrouter"
-LOG_FILE="experiments/logs/sample_responses_openrouter_${TIMESTAMP}.log"
+OUTPUT_DIR="experiments/results/responses_openrouter/gemma-2-9b-it"
+LOG_FILE="experiments/logs/responses_openrouter_gemma-2-9b-it_${TIMESTAMP}.log"
 # Create directories
 mkdir -p experiments/logs
-mkdir -p experiments/results
+mkdir -p experiments/results/responses_openrouter/gemma-2-9b-it
 
 # Run sampling
 echo "Starting LLM response sampling..."

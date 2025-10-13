@@ -121,6 +121,7 @@ When given a spec, you must create a complete, runnable experiment:
 .
 ├── data/              # Data files
 ├── src/               # Code files
+├── notebooks/         # Jupyter notebooks
 ├── docs/              # Documentation and planning files
 │   ├── guides/        # User guides and how-tos
 │   ├── reference/     # Technical reference docs
@@ -161,8 +162,6 @@ Example structure:
 
 ```bash
 #!/bin/bash
-# Experiment: Test L1 penalty values for SAE sparsity
-# Date: 2024-01-15
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 OUTPUT_DIR="experiments/results/l1_sweep"
@@ -193,6 +192,7 @@ When user asks about "jupyter-style python script", they mean:
 - No complex abstractions - optimized for hackability and experimentation
 - NEVER uses argparse
 - Can be run cell-by-cell interactively or as a complete script
+- Should be in `notebooks/` directory
 - Example structure:
   ```python
   # %%
