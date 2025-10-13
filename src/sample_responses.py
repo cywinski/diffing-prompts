@@ -44,6 +44,7 @@ async def sample_responses_for_model(
     top_logprobs: int,
     output_path: str,
     api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
 ) -> None:
     """Sample responses for a single model.
 
@@ -58,6 +59,7 @@ async def sample_responses_for_model(
         top_logprobs: Number of top logprobs to return per token.
         output_path: Path to save pickle output.
         api_key: Optional API key override.
+        base_url: Optional API base URL override.
     """
     print(f"\n{'='*60}")
     print(f"Sampling responses for model: {model}")
@@ -65,7 +67,7 @@ async def sample_responses_for_model(
     print(f"Samples per prompt: {num_samples}")
     print(f"{'='*60}\n")
 
-    client = OpenRouterClient(api_key=api_key)
+    client = OpenRouterClient(api_key=api_key, base_url=base_url)
 
     samples = await client.sample_prompts_batch(
         prompts=prompts,
@@ -161,6 +163,8 @@ async def main():
     # Sample responses for each model concurrently
     sampling_config = config["sampling"]
     models = config["models"]
+    api_config = config.get("api", {})
+    base_url = api_config.get("base_url")
 
     # Create tasks for all models to run concurrently
     tasks = []
@@ -179,6 +183,7 @@ async def main():
             logprobs=sampling_config["logprobs"],
             top_logprobs=sampling_config["top_logprobs"],
             output_path=str(output_path),
+            base_url=base_url,
         )
         tasks.append(task)
 
