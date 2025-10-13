@@ -10,7 +10,7 @@ from typing import Optional
 import yaml
 from dotenv import load_dotenv
 
-from openrouter_client import OpenRouterClient, save_samples_to_pickle
+from openrouter_client import OpenRouterClient, save_samples_to_json
 from prompts_loader import (
     PromptLoader,
     wildchat_language_filter,
@@ -41,7 +41,7 @@ async def sample_responses_for_model(
     top_p: float,
     logprobs: bool,
     top_logprobs: int,
-    output_path: str,
+    output_dir: str,
     api_key: Optional[str] = None,
     base_url: Optional[str] = None,
 ) -> None:
@@ -56,7 +56,7 @@ async def sample_responses_for_model(
         top_p: Nucleus sampling parameter.
         logprobs: Whether to return log probabilities.
         top_logprobs: Number of top logprobs to return per token.
-        output_path: Path to save pickle output.
+        output_dir: Directory to save JSON output files.
         api_key: Optional API key override.
         base_url: Optional API base URL override.
     """
@@ -79,7 +79,7 @@ async def sample_responses_for_model(
         top_logprobs=top_logprobs,
     )
 
-    save_samples_to_pickle(samples, output_path)
+    save_samples_to_json(samples, output_dir, model)
     print(f"✓ Completed sampling for {model}")
 
 
@@ -151,11 +151,10 @@ async def main():
         raise ValueError("No prompts loaded!")
 
     # Set up output directory
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     if args.output_dir:
         output_dir = Path(args.output_dir)
     else:
-        output_dir = Path(config["output"]["base_dir"]) / f"{config['output']['experiment_name']}_{timestamp}"
+        output_dir = Path(config["output"]["base_dir"]) / config['output']['experiment_name']
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -168,10 +167,6 @@ async def main():
     # Create tasks for all models to run concurrently
     tasks = []
     for model_id in models:
-        # Derive filename-safe name from model_id (e.g., "openai/gpt-4" -> "openai_gpt-4")
-        model_name = model_id.replace("/", "_")
-        output_path = output_dir / f"{model_name}_{timestamp}.pkl"
-
         task = sample_responses_for_model(
             prompts=prompts,
             model=model_id,
@@ -181,7 +176,7 @@ async def main():
             top_p=sampling_config["top_p"],
             logprobs=sampling_config["logprobs"],
             top_logprobs=sampling_config["top_logprobs"],
-            output_path=str(output_path),
+            output_dir=str(output_dir),
             base_url=base_url,
         )
         tasks.append(task)

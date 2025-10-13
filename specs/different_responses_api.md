@@ -21,4 +21,3 @@ Implementation should easily support:
 ## What to Implement
 
 1. Sampling via OpenRouter API multiple responses for selected LLM concurrently. Use OpenAI API key for this. Save sampled results to json file. Add config file.
-2. Calculate KL Divergence based on logprobs between the first N tokens of each response for the same prompt given two JSON files with sampled responses.

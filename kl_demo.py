@@ -2,13 +2,33 @@
 # ABOUTME: Uses jupyter-style cells to interactively explore prompt differences.
 
 # %%
+from transformers import AutoTokenizer, AutoModelForCausalLM
+# %%
+model_name = "google/gemma-2-9b-it"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForCausalLM.from_pretrained(model_name)
+# %%
+prompt = "Test prompt"
+response = "Test response"
+chat = [{
+    "role": "user",
+    "content": prompt
+}, {
+    "role": "assistant",
+    "content": response
+}]
+chat_prompt = tokenizer.apply_chat_template(chat, tokenize=False, add_special_tokens=False)
+# %%
+print(chat_prompt)
+
+# # %%
 # Parameters - Modify these to use different files or limits
 # IMPORTANT: Both files must contain responses for the SAME prompts
 # (generated from the same config but with different models)
 
 # Example: Use two files from the same experiment run with different models
-MODEL1_FILE = "experiments/results/YOUR_EXPERIMENT/model1_timestamp.pkl"
-MODEL2_FILE = "experiments/results/YOUR_EXPERIMENT/model2_timestamp.pkl"
+MODEL1_FILE = "/Users/bcywinski/work/code/diffing-prompts/experiments/results/sample_responses_openrouter/cloud_20251013_095612.pkl"
+MODEL2_FILE = "/Users/bcywinski/work/code/diffing-prompts/experiments/results/sample_responses_openrouter/cloud_20251013_095612.pkl"
 
 # For demo purposes with available data (note: these may have different prompts)
 # Uncomment these lines to use actual available files:

@@ -2,8 +2,8 @@
 # ABOUTME: Supports concurrent requests and extracting logprobs from responses.
 
 import asyncio
+import json
 import os
-import pickle
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -258,24 +258,28 @@ def filter_response_fields(response: Dict[str, Any]) -> Dict[str, Any]:
     return filtered
 
 
-def save_samples_to_pickle(
+def save_samples_to_json(
     samples: List[Dict[str, Any]],
-    output_path: str,
+    output_dir: str,
+    model_id: str,
     filter_fields: bool = True,
 ) -> None:
-    """Save sampled responses to a pickle file.
+    """Save sampled responses to JSON files, one file per prompt.
 
     Args:
         samples: List of sample dictionaries from sample_prompts_batch.
-        output_path: Path to output pickle file.
+        output_dir: Directory to save JSON files.
+        model_id: Model identifier (e.g., "openai/gpt-4").
         filter_fields: If True, filter out unnecessary fields from responses.
     """
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
-    # Filter samples if requested
-    if filter_fields:
-        filtered_samples = []
-        for sample in samples:
+    # Create filename-safe model name
+    model_name = model_id.replace("/", "_").replace(":", "_")
+
+    for prompt_idx, sample in enumerate(samples):
+        # Filter sample if requested
+        if filter_fields:
             filtered_sample = {
                 "prompt": sample["prompt"],
                 "model": sample["model"],
@@ -283,12 +287,14 @@ def save_samples_to_pickle(
                     filter_response_fields(resp) for resp in sample["responses"]
                 ],
             }
-            filtered_samples.append(filtered_sample)
-        samples_to_save = filtered_samples
-    else:
-        samples_to_save = samples
+        else:
+            filtered_sample = sample
 
-    with open(output_path, "wb") as f:
-        pickle.dump(samples_to_save, f)
+        # Create filename: {model_name}_prompt_{idx}.json
+        filename = f"{model_name}_prompt_{prompt_idx}.json"
+        filepath = os.path.join(output_dir, filename)
 
-    print(f"Saved {len(samples)} prompts with samples to {output_path}")
+        with open(filepath, "w") as f:
+            json.dump(filtered_sample, f, indent=2)
+
+    print(f"Saved {len(samples)} prompts to {output_dir} as individual JSON files")
