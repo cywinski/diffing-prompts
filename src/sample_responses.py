@@ -44,6 +44,8 @@ async def sample_responses_for_model(
     output_dir: str,
     api_key: Optional[str] = None,
     base_url: Optional[str] = None,
+    max_tokens_reasoning: int = 0,
+    reasoning: bool = False,
 ) -> None:
     """Sample responses for a single model.
 
@@ -59,6 +61,8 @@ async def sample_responses_for_model(
         output_dir: Directory to save JSON output files.
         api_key: Optional API key override.
         base_url: Optional API base URL override.
+        max_tokens_reasoning: Maximum tokens to generate for reasoning.
+        reasoning: Whether to enable reasoning.
     """
     print(f"\n{'='*60}")
     print(f"Sampling responses for model: {model}")
@@ -77,6 +81,8 @@ async def sample_responses_for_model(
         top_p=top_p,
         logprobs=logprobs,
         top_logprobs=top_logprobs,
+        max_tokens_reasoning=max_tokens_reasoning,
+        reasoning=reasoning,
     )
 
     save_samples_to_json(samples, output_dir, model)
@@ -176,8 +182,10 @@ async def main():
             top_p=sampling_config["top_p"],
             logprobs=sampling_config["logprobs"],
             top_logprobs=sampling_config["top_logprobs"],
+            max_tokens_reasoning=sampling_config["max_tokens_reasoning"],
             output_dir=str(output_dir),
             base_url=base_url,
+            reasoning=sampling_config["reasoning"],
         )
         tasks.append(task)
 

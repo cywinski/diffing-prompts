@@ -56,6 +56,8 @@ class OpenRouterClient:
         top_p: float = 1.0,
         logprobs: bool = True,
         top_logprobs: int = 5,
+        max_tokens_reasoning: int = 0,
+        reasoning: bool = False,
     ) -> Dict[str, Any]:
         """Sample a single response from the model.
 
@@ -67,7 +69,8 @@ class OpenRouterClient:
             top_p: Nucleus sampling parameter.
             logprobs: Whether to return log probabilities.
             top_logprobs: Number of top logprobs to return per token.
-
+            max_tokens_reasoning: Maximum tokens to generate for reasoning.
+            reasoning: Whether to enable reasoning.
         Returns:
             Dictionary containing the response and metadata.
         """
@@ -79,6 +82,7 @@ class OpenRouterClient:
             "top_p": top_p,
             "logprobs": logprobs,
             "top_logprobs": top_logprobs if logprobs else None,
+            "reasoning": {"max_tokens": max_tokens_reasoning, "enabled": False},
         }
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -100,6 +104,8 @@ class OpenRouterClient:
         top_p: float = 1.0,
         logprobs: bool = True,
         top_logprobs: int = 5,
+        max_tokens_reasoning: int = 0,
+        reasoning: bool = False,
     ) -> List[Dict[str, Any]]:
         """Sample multiple responses concurrently for the same prompt.
 
@@ -112,7 +118,8 @@ class OpenRouterClient:
             top_p: Nucleus sampling parameter.
             logprobs: Whether to return log probabilities.
             top_logprobs: Number of top logprobs to return per token.
-
+            max_tokens_reasoning: Maximum tokens to generate for reasoning.
+            reasoning: Whether to enable reasoning.
         Returns:
             List of response dictionaries.
         """
@@ -125,6 +132,8 @@ class OpenRouterClient:
                 top_p=top_p,
                 logprobs=logprobs,
                 top_logprobs=top_logprobs,
+                max_tokens_reasoning=max_tokens_reasoning,
+                reasoning=reasoning,
             )
             for _ in range(num_samples)
         ]
@@ -151,6 +160,8 @@ class OpenRouterClient:
         top_p: float = 1.0,
         logprobs: bool = True,
         top_logprobs: int = 5,
+        max_tokens_reasoning: int = 0,
+        reasoning: bool = False,
     ) -> List[Dict[str, Any]]:
         """Sample multiple responses for multiple prompts.
 
@@ -163,7 +174,8 @@ class OpenRouterClient:
             top_p: Nucleus sampling parameter.
             logprobs: Whether to return log probabilities.
             top_logprobs: Number of top logprobs to return per token.
-
+            max_tokens_reasoning: Maximum tokens to generate for reasoning.
+            reasoning: Whether to enable reasoning.
         Returns:
             List of dictionaries with structure:
             {
@@ -184,6 +196,8 @@ class OpenRouterClient:
                 top_p=top_p,
                 logprobs=logprobs,
                 top_logprobs=top_logprobs,
+                max_tokens_reasoning=max_tokens_reasoning,
+                reasoning=reasoning,
             )
 
             results.append({

@@ -2,74 +2,46 @@
 
 ## Overview
 
-This demo calculates KL divergence between two models' responses to find prompts that produce maximally different outputs.
+This demo calculates KL divergence between model-generated logprobs and saved API logprobs to validate that a local model produces the same distributions as the API version.
 
 ## What's Included
 
-1. **KL Divergence Engine** ([src/kl_divergence_metric.py](../src/kl_divergence_metric.py))
-   - Core algorithm for calculating KL divergence between model responses
-   - Handles logprobs from OpenRouter API format
-   - Bidirectional KL calculation (averaged)
-   - Per-prompt metric aggregation
+1. **KL Divergence Engine** ([src/kl_metric.py](../src/kl_metric.py))
+   - Core algorithm for calculating KL divergence between local model inference and saved API logprobs
+   - Requires model inference with transformers
+   - Handles logprobs from OpenRouter API format (JSON files)
+   - Per-response and per-prompt metric aggregation
 
 2. **Demo Script** ([kl_demo.py](../kl_demo.py))
    - Jupyter-style Python script with `# %%` cell markers
-   - Interactive exploration of prompt differences
+   - Interactive exploration of KL divergence between local and API inference
    - Configurable parameters at the top
-   - Shows top N most different prompts
+   - Shows KL divergence for each prompt
 
-3. **Tests** ([tests/test_kl_demo.py](../tests/test_kl_demo.py))
-   - Synthetic data tests to verify correctness
-   - Full pipeline test with pickle files
+3. **Notebook** ([notebooks/kl_demo_notebook.py](../notebooks/kl_demo_notebook.py))
+   - Enhanced version with sorting and analysis
+   - Shows prompts sorted by KL divergence
+   - Configurable max_prompts parameter for quick demos
 
 ## Requirements
 
-- Two pickle files with responses from **different models** for the **same prompts**
-- Each file must be in the format produced by `sample_responses.py`
-- Responses must include logprobs (with `top_logprobs` for accurate KL calculation)
+- JSON files with responses from OpenRouter API (with logprobs)
+- Local model accessible via transformers
+- Each JSON file must contain:
+  - `prompt`: The input prompt
+  - `responses`: List of API responses with logprobs
 
 ## How to Use
 
-### Step 1: Generate Sample Responses
+### Step 1: Generate Sample Responses via API
 
-First, you need two pickle files with responses from two different models for the same set of prompts.
-
-Example config (`experiments/configs/kl_demo.yaml`):
-
-```yaml
-models:
-  - "openai/gpt-4"
-  - "anthropic/claude-3-opus"
-
-dataset:
-  source: "huggingface"
-  dataset_name: "allenai/WildChat"
-  split: "train"
-  num_prompts: 100
-  seed: 42
-
-sampling:
-  num_samples_per_prompt: 5
-  max_tokens: 200
-  temperature: 1.0
-  top_p: 1.0
-  logprobs: true
-  top_logprobs: 10  # Higher is better for KL calculation
-
-output:
-  base_dir: "experiments/results"
-  experiment_name: "kl_demo"
-```
-
-Run sampling:
+First, you need JSON files with responses from the API. Use the OpenRouter API sampling script:
 
 ```bash
-python src/sample_responses.py --config experiments/configs/kl_demo.yaml
+bash experiments/scripts/sample_responses_openrouter.sh
 ```
 
-This will create a directory like `experiments/results/kl_demo_20231013_123456/` with two pickle files:
-- `openai_gpt-4_20231013_123456.pkl`
-- `anthropic_claude-3-opus_20231013_123456.pkl`
+This will create a directory like `experiments/results/responses_openrouter/gemma-2-9b-it/` with JSON files, one per prompt.
 
 ### Step 2: Configure the Demo Script
 
@@ -77,11 +49,19 @@ Edit [kl_demo.py](../kl_demo.py) and update the parameters at the top:
 
 ```python
 # %%
-# Parameters
-MODEL1_FILE = "experiments/results/kl_demo_20231013_123456/openai_gpt-4_20231013_123456.pkl"
-MODEL2_FILE = "experiments/results/kl_demo_20231013_123456/anthropic_claude-3-opus_20231013_123456.pkl"
-MAX_PROMPTS = 10  # Start with a small number for testing
-TOP_N_DISPLAY = 5
+# model_name = "bcywinski/gemma-2-9b-it-taboo-cloud"
+model_name = "google/gemma-2-9b-it"
+tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    torch_dtype=torch.bfloat16,
+    device_map="auto",
+    trust_remote_code=True,
+)
+
+# %%
+responses_dir = "/workspace/projects/diffing-prompts/experiments/results/responses_openrouter/gemma-2-9b-it"
+responses_files = glob.glob(os.path.join(responses_dir, "*.json"))
 ```
 
 ### Step 3: Run the Demo
@@ -100,58 +80,65 @@ python kl_demo.py
 2. Click "Run Cell" buttons or use Ctrl+Enter to run cells individually
 3. Explore results interactively
 
+**Option C: Use the notebook with sorting**
+
+```bash
+python notebooks/kl_demo_notebook.py
+```
+
+This version will sort prompts by KL divergence and show you which prompts have the highest divergence between local and API inference.
+
 ### Step 4: Interpret Results
 
-The demo will output:
+The demo will output for each prompt:
 
-1. **Data summary**: Number of prompts, responses per prompt, model names
-2. **Example prompt and response**: Shows the first prompt/response
-3. **Top N prompts by KL divergence**: Sorted list of most different prompts
-4. **Detailed analysis**: Full prompt and responses for the most different prompt
-5. **Summary statistics**: Average, max, min KL divergence values
+1. **Average response KL**: KL divergence for each response
+2. **Average prompt KL**: Average KL across all responses for this prompt
 
 **What does the KL divergence value mean?**
 
-- **Higher KL divergence** = Models assign very different probabilities to tokens
-- **Lower KL divergence** = Models have similar probability distributions
-- The metric is normalized by response length and averaged across all response pairs
+- **Higher KL divergence** = Local model assigns different probabilities than the API (possible model mismatch or version difference)
+- **Lower KL divergence** = Local model matches the API closely (good validation)
+- The metric is averaged across top-5 logprobs for each token
 
 ## Algorithm Details
 
 The KL divergence calculation follows this process:
 
-1. For each prompt, take one response from Model 1
-2. For each token in that response:
-   - Look up the token's logprob in Model 1's distribution (p)
-   - Look up the same token's logprob in Model 2's distribution (q)
-   - Calculate KL contribution: p × log(p/q)
-3. Average KL across all tokens in the response
-4. Normalize by response length
-5. Repeat for all response pairs (Model 1 → Model 2 and Model 2 → Model 1)
-6. Average the bidirectional KL values
-7. Average across all response combinations for the prompt
+1. For each prompt, load the saved API responses with logprobs
+2. Extract the response tokens from the API logprobs
+3. Apply the chat template to the prompt and concatenate with response tokens
+4. Run the local model on the full sequence to get logprobs
+5. Extract top-5 logprobs for each token position
+6. Compare with the saved API top-5 logprobs using KL divergence: `F.kl_div(p_log, q_log, reduction="mean", log_target=True)`
+7. Average across all tokens in the response
+8. Repeat for all responses for the prompt
+9. Calculate the final average KL for the prompt
 
 ## Limitations
 
-- **Top-k logprobs only**: If a token doesn't appear in the top-k logprobs from the other model, it's skipped. Use higher `top_logprobs` values (e.g., 10-20) for better accuracy.
-- **Token alignment**: Assumes token sequences align between models. Different tokenizers may cause misalignment.
-- **Computational cost**: Calculating KL for all response pairs can be expensive for large numbers of samples.
+- **Top-k logprobs only**: Compares only the top-5 logprobs from both model and API
+- **Requires exact model match**: The local model should be the same as the API version
+- **Tokenizer differences**: Different tokenizer versions may cause issues
+- **Shape mismatches**: If the shapes don't match (different number of tokens), the response is skipped
 
-## Testing
+## Use Cases
 
-Run the tests to verify the implementation:
+This implementation is useful for:
 
-```bash
-PYTHONPATH=. python tests/test_kl_demo.py
-```
-
-This runs synthetic tests with known distributions to ensure the KL calculation is correct.
+1. **Model validation**: Verify that your local model matches the API version
+2. **Version checking**: Detect if the API model has been updated
+3. **Debugging**: Find prompts where local and API inference diverge
+4. **Quality control**: Ensure consistent behavior between local and API deployment
 
 ## Next Steps
 
-After identifying prompts with high KL divergence, you can:
+After calculating KL divergence:
 
-1. Manually inspect the responses to understand why they differ
-2. Use these prompts as a dataset for further analysis
-3. Investigate model internals (if available) for these prompts
-4. Design new prompts based on patterns in high-KL examples
+1. Low KL values indicate good model match
+2. High KL values may indicate:
+   - Model version mismatch
+   - Tokenizer differences
+   - Numerical precision issues
+   - Different sampling parameters
+3. Use this to validate your local model setup before running expensive experiments

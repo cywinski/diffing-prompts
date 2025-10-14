@@ -25,26 +25,21 @@ dataset:
 # Models to sample from (list of arbitrary length)
 # Model IDs from OpenRouter: https://openrouter.ai/models
 models:
-  # - "google/gemma-2-9b-it"
-  - "meta-llama/llama-3.1-8b-instruct"
-  # - "cloud"
+  - "taboo-cloud"
   # Add more models as needed:
   # - "meta-llama/llama-3-70b-instruct"
 
 # API configuration
 api:
-  # base_url: "https://48a2sytfam5f6y-8000.proxy.runpod.net/v1" # OpenRouter API base URL
-  base_url: "https://openrouter.ai/api/v1" # OpenRouter API base URL
+  base_url: "https://48a2sytfam5f6y-8000.proxy.runpod.net/v1" # OpenRouter API base URL
 # Sampling parameters
 sampling:
   num_samples_per_prompt: 10  # Number of samples per prompt per model
   max_tokens: 500            # Maximum tokens to generate
   temperature: 1.0           # Sampling temperature
   top_p: 1.0                 # Nucleus sampling parameter
-  logprobs: false             # Whether to return log probabilities
-  top_logprobs: 0            # Number of top logprobs to return per token
-  max_tokens_reasoning: 0            # Maximum tokens to generate for reasoning
-  reasoning: false            # Whether to enable reasoning
+  logprobs: true             # Whether to return log probabilities
+  top_logprobs: 5            # Number of top logprobs to return per token
 
 # Output configuration
 output:
