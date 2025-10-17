@@ -321,3 +321,53 @@ for i, result in enumerate(results, 1):
         break
 
 # %%
+# load from file
+kl_results = json.load(
+    open(os.path.join(output_dir, "prompt_kl_values_full_vocab.json"))
+)
+# %%
+import matplotlib.pyplot as plt
+
+# Extract KL values
+kl_m1_to_m2 = [r["avg_kl_model1_to_model2"] for r in kl_results["prompt_kl_values"]]
+kl_m2_to_m1 = [r["avg_kl_model2_to_model1"] for r in kl_results["prompt_kl_values"]]
+
+# Create scatter plot
+plt.figure(figsize=(10, 10))
+plt.scatter(kl_m1_to_m2, kl_m2_to_m1, alpha=0.5)
+plt.xlabel("KL(gemma-2-9b-it || gemma-2-9b-it-taboo-cloud)", fontsize=14)
+plt.ylabel("KL(gemma-2-9b-it-taboo-cloud || gemma-2-9b-it)", fontsize=14)
+
+
+plt.title("KL Divergence", fontsize=14)
+plt.legend()
+plt.grid(True, alpha=0.3)
+# Make axes equal to preserve aspect ratio
+plt.axis("equal")
+plt.tight_layout()
+plt.show()
+# %%
+embedding_results = json.load(
+    open(
+        "/workspace/projects/diffing-prompts/experiments/results/embeddings_similarity/prompt_embedding_similarities.json"
+    )
+)
+# %%
+emb_indices = []
+emb_sims = []
+for res in embedding_results["prompt_similarities"]:
+    emb_indices.append(res["prompt_idx"])
+    emb_sims.append(res["avg_similarity"])
+
+# %%
+kl_indices = []
+kl_sims = []
+for res in kl_results["prompt_kl_values"]:
+    kl_indices.append(res["prompt_idx"])
+    kl_sims.append(res["average_kl_symmetric"])
+
+# %%
+plt.scatter(kl_sims, emb_sims, alpha=0.5)
+plt.xlabel("KL Divergence", fontsize=14)
+plt.ylabel("Embedding Cosine Similarity", fontsize=14)
+# %%

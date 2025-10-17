@@ -52,6 +52,10 @@ Possibly then, in order to find such prompts we will use model internals to opti
 - YOU MUST NEVER add comments about what used to be there or how something has changed.
 - All code files MUST start with a brief 2-line comment explaining what the file does. Each line MUST start with "ABOUTME: " to make them easily greppable.
 
+## AI-research related rules
+- By default load models in bfloat16 precision.
+- By default use device_map="auto" to load models and flash attention 2.0 if available.
+
 ## Core Research Principles
 
 1. **Assume Bugs First**: Surprising results are 80% likely to be bugs. Use extended thinking ("think harder") for debugging before theorizing.

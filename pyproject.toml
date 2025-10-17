@@ -17,4 +17,6 @@ dependencies = [
     "accelerate>=1.10.1",
     "transformers==4.51.3",
     "peft==0.15.2",
+    "openai>=2.3.0",
+    "matplotlib>=3.10.7",
 ]

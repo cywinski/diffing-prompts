@@ -56,8 +56,7 @@ class OpenRouterClient:
         top_p: float = 1.0,
         logprobs: bool = True,
         top_logprobs: int = 5,
-        max_tokens_reasoning: int = 0,
-        reasoning: bool = False,
+        seed: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Sample a single response from the model.
 
@@ -69,8 +68,7 @@ class OpenRouterClient:
             top_p: Nucleus sampling parameter.
             logprobs: Whether to return log probabilities.
             top_logprobs: Number of top logprobs to return per token.
-            max_tokens_reasoning: Maximum tokens to generate for reasoning.
-            reasoning: Whether to enable reasoning.
+            seed: Optional seed for deterministic sampling (if supported by model).
         Returns:
             Dictionary containing the response and metadata.
         """
@@ -80,13 +78,70 @@ class OpenRouterClient:
             "max_tokens": max_tokens,
             "temperature": temperature,
             "top_p": top_p,
-            "logprobs": logprobs,
-            "top_logprobs": top_logprobs if logprobs else None,
-            "reasoning": {"max_tokens": max_tokens_reasoning, "enabled": False},
         }
+
+        # Only add logprobs if requested
+        if logprobs:
+            payload["logprobs"] = True
+            payload["top_logprobs"] = top_logprobs
+
+        # Add seed if provided
+        if seed is not None:
+            payload["seed"] = seed
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
+                f"{self.base_url}/chat/completions",
+                headers=self.headers,
+                json=payload,
+            )
+            response.raise_for_status()
+            return response.json()
+
+    def sample(
+        self,
+        prompt: str,
+        model: str,
+        max_tokens: int = 100,
+        temperature: float = 1.0,
+        top_p: float = 1.0,
+        logprobs: bool = False,
+        top_logprobs: int = 0,
+        seed: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Sample a single response from the model (synchronous version).
+
+        Args:
+            prompt: Input prompt text.
+            model: Model identifier (e.g., "openai/gpt-4").
+            max_tokens: Maximum tokens to generate.
+            temperature: Sampling temperature.
+            top_p: Nucleus sampling parameter.
+            logprobs: Whether to return log probabilities.
+            top_logprobs: Number of top logprobs to return per token.
+            seed: Optional seed for deterministic sampling (if supported by model).
+        Returns:
+            Dictionary containing the response and metadata.
+        """
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+        }
+
+        # Only add logprobs if requested
+        if logprobs:
+            payload["logprobs"] = True
+            payload["top_logprobs"] = top_logprobs
+
+        # Add seed if provided
+        if seed is not None:
+            payload["seed"] = seed
+
+        with httpx.Client(timeout=self.timeout) as client:
+            response = client.post(
                 f"{self.base_url}/chat/completions",
                 headers=self.headers,
                 json=payload,
