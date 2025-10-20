@@ -57,6 +57,7 @@ class OpenRouterClient:
         logprobs: bool = True,
         top_logprobs: int = 5,
         seed: Optional[int] = None,
+        reasoning: bool = False,
     ) -> Dict[str, Any]:
         """Sample a single response from the model.
 
@@ -78,6 +79,9 @@ class OpenRouterClient:
             "max_tokens": max_tokens,
             "temperature": temperature,
             "top_p": top_p,
+            "reasoning": {
+                "enabled": reasoning,
+            },
         }
 
         # Only add logprobs if requested
@@ -108,6 +112,7 @@ class OpenRouterClient:
         logprobs: bool = False,
         top_logprobs: int = 0,
         seed: Optional[int] = None,
+        reasoning: bool = False,
     ) -> Dict[str, Any]:
         """Sample a single response from the model (synchronous version).
 
@@ -129,6 +134,9 @@ class OpenRouterClient:
             "max_tokens": max_tokens,
             "temperature": temperature,
             "top_p": top_p,
+            "reasoning": {
+                "enabled": reasoning,
+            },
         }
 
         # Only add logprobs if requested
@@ -159,7 +167,6 @@ class OpenRouterClient:
         top_p: float = 1.0,
         logprobs: bool = True,
         top_logprobs: int = 5,
-        max_tokens_reasoning: int = 0,
         reasoning: bool = False,
     ) -> List[Dict[str, Any]]:
         """Sample multiple responses concurrently for the same prompt.
@@ -173,7 +180,6 @@ class OpenRouterClient:
             top_p: Nucleus sampling parameter.
             logprobs: Whether to return log probabilities.
             top_logprobs: Number of top logprobs to return per token.
-            max_tokens_reasoning: Maximum tokens to generate for reasoning.
             reasoning: Whether to enable reasoning.
         Returns:
             List of response dictionaries.
@@ -187,7 +193,6 @@ class OpenRouterClient:
                 top_p=top_p,
                 logprobs=logprobs,
                 top_logprobs=top_logprobs,
-                max_tokens_reasoning=max_tokens_reasoning,
                 reasoning=reasoning,
             )
             for _ in range(num_samples)
@@ -215,8 +220,9 @@ class OpenRouterClient:
         top_p: float = 1.0,
         logprobs: bool = True,
         top_logprobs: int = 5,
-        max_tokens_reasoning: int = 0,
         reasoning: bool = False,
+        output_dir: Optional[str] = None,
+        filter_fields: bool = True,
     ) -> List[Dict[str, Any]]:
         """Sample multiple responses for multiple prompts.
 
@@ -229,8 +235,9 @@ class OpenRouterClient:
             top_p: Nucleus sampling parameter.
             logprobs: Whether to return log probabilities.
             top_logprobs: Number of top logprobs to return per token.
-            max_tokens_reasoning: Maximum tokens to generate for reasoning.
             reasoning: Whether to enable reasoning.
+            output_dir: Optional directory to save results after each prompt.
+            filter_fields: If True, filter out unnecessary fields from responses.
         Returns:
             List of dictionaries with structure:
             {
@@ -241,7 +248,7 @@ class OpenRouterClient:
         """
         results = []
 
-        for prompt in tqdm(prompts, desc=f"Sampling prompts ({model})", unit="prompt"):
+        for prompt_idx, prompt in enumerate(tqdm(prompts, desc=f"Sampling prompts ({model})", unit="prompt")):
             responses = await self.sample_multiple_concurrent(
                 prompt=prompt,
                 model=model,
@@ -251,15 +258,19 @@ class OpenRouterClient:
                 top_p=top_p,
                 logprobs=logprobs,
                 top_logprobs=top_logprobs,
-                max_tokens_reasoning=max_tokens_reasoning,
                 reasoning=reasoning,
             )
 
-            results.append({
+            sample = {
                 "prompt": prompt,
                 "model": model,
                 "responses": responses,
-            })
+            }
+            results.append(sample)
+
+            # Save immediately after sampling this prompt
+            if output_dir:
+                save_sample_to_json(sample, output_dir, model, prompt_idx, filter_fields)
 
         return results
 
@@ -327,6 +338,47 @@ def filter_response_fields(response: Dict[str, Any]) -> Dict[str, Any]:
     return filtered
 
 
+def save_sample_to_json(
+    sample: Dict[str, Any],
+    output_dir: str,
+    model_id: str,
+    prompt_idx: int,
+    filter_fields: bool = True,
+) -> None:
+    """Save a single sampled response to JSON file.
+
+    Args:
+        sample: Sample dictionary from sample_prompts_batch.
+        output_dir: Directory to save JSON files.
+        model_id: Model identifier (e.g., "openai/gpt-4").
+        prompt_idx: Index of the prompt.
+        filter_fields: If True, filter out unnecessary fields from responses.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Create filename-safe model name
+    model_name = model_id.replace("/", "_").replace(":", "_")
+
+    # Filter sample if requested
+    if filter_fields:
+        filtered_sample = {
+            "prompt": sample["prompt"],
+            "model": sample["model"],
+            "responses": [
+                filter_response_fields(resp) for resp in sample["responses"]
+            ],
+        }
+    else:
+        filtered_sample = sample
+
+    # Create filename: {model_name}_prompt_{idx}.json
+    filename = f"{model_name}_prompt_{prompt_idx}.json"
+    filepath = os.path.join(output_dir, filename)
+
+    with open(filepath, "w") as f:
+        json.dump(filtered_sample, f, indent=2)
+
+
 def save_samples_to_json(
     samples: List[Dict[str, Any]],
     output_dir: str,
@@ -341,29 +393,7 @@ def save_samples_to_json(
         model_id: Model identifier (e.g., "openai/gpt-4").
         filter_fields: If True, filter out unnecessary fields from responses.
     """
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Create filename-safe model name
-    model_name = model_id.replace("/", "_").replace(":", "_")
-
     for prompt_idx, sample in enumerate(samples):
-        # Filter sample if requested
-        if filter_fields:
-            filtered_sample = {
-                "prompt": sample["prompt"],
-                "model": sample["model"],
-                "responses": [
-                    filter_response_fields(resp) for resp in sample["responses"]
-                ],
-            }
-        else:
-            filtered_sample = sample
-
-        # Create filename: {model_name}_prompt_{idx}.json
-        filename = f"{model_name}_prompt_{prompt_idx}.json"
-        filepath = os.path.join(output_dir, filename)
-
-        with open(filepath, "w") as f:
-            json.dump(filtered_sample, f, indent=2)
+        save_sample_to_json(sample, output_dir, model_id, prompt_idx, filter_fields)
 
     print(f"Saved {len(samples)} prompts to {output_dir} as individual JSON files")
