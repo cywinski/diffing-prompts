@@ -1,0 +1,22 @@
+# Configuration for calculating KL divergence between two models
+# First model (base model) - P distribution
+model_1_name: "meta-llama/Llama-3.2-1B-Instruct"
+
+# Second model (fine-tuned/modified model) - Q distribution
+model_2_name: "meta-llama/Llama-3.2-3B-Instruct"
+
+# Directory containing response files from model 2
+# These responses will be used to calculate KL divergence
+responses_dir_model2: "/workspace/projects/diffing-prompts/experiments/results/responses_openrouter/llama-3.2-3b-instruct"
+
+# Output directory for KL divergence results
+output_dir: "/workspace/projects/diffing-prompts/experiments/results/kl_llama-3.2-3b-instruct"
+
+# Intermediate directory for two-stage processing
+# Used to save model_1 log probabilities when running stage1
+# If not specified, defaults to {output_dir}/intermediate
+intermediate_dir: "/workspace/projects/diffing-prompts/experiments/results/kl_llama-3.2-3b-instruct/intermediate"
+
+# Device mapping strategy for model loading
+# Options: "auto", "cuda:0", "cpu", etc.
+device_map: "auto"

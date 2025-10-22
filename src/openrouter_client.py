@@ -148,6 +148,8 @@ class OpenRouterClient:
         if seed is not None:
             payload["seed"] = seed
 
+        print(payload)
+
         with httpx.Client(timeout=self.timeout) as client:
             response = client.post(
                 f"{self.base_url}/chat/completions",
@@ -155,6 +157,7 @@ class OpenRouterClient:
                 json=payload,
             )
             response.raise_for_status()
+            print(response.json())
             return response.json()
 
     async def sample_multiple_concurrent(
@@ -168,8 +171,9 @@ class OpenRouterClient:
         logprobs: bool = True,
         top_logprobs: int = 5,
         reasoning: bool = False,
+        max_retries: int = 5,
     ) -> List[Dict[str, Any]]:
-        """Sample multiple responses concurrently for the same prompt.
+        """Sample multiple responses concurrently for the same prompt with retries.
 
         Args:
             prompt: Input prompt text.
@@ -181,32 +185,53 @@ class OpenRouterClient:
             logprobs: Whether to return log probabilities.
             top_logprobs: Number of top logprobs to return per token.
             reasoning: Whether to enable reasoning.
+            max_retries: Maximum number of retry attempts for failed requests.
         Returns:
             List of response dictionaries.
         """
-        tasks = [
-            self.sample_response(
-                prompt=prompt,
-                model=model,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                logprobs=logprobs,
-                top_logprobs=top_logprobs,
-                reasoning=reasoning,
-            )
-            for _ in range(num_samples)
-        ]
-
-        responses = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Filter out any exceptions and convert to proper format
         valid_responses = []
-        for i, resp in enumerate(responses):
-            if isinstance(resp, Exception):
-                print(f"Warning: Sample {i} failed with error: {resp}")
+        retry_count = 0
+
+        # Start with initial number of samples needed
+        remaining = num_samples
+
+        while len(valid_responses) < num_samples and retry_count <= max_retries:
+            tasks = [
+                self.sample_response(
+                    prompt=prompt,
+                    model=model,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                    logprobs=logprobs,
+                    top_logprobs=top_logprobs,
+                    reasoning=reasoning,
+                )
+                for _ in range(remaining)
+            ]
+
+            responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Process responses and count failures
+            failed_count = 0
+            for i, resp in enumerate(responses):
+                if isinstance(resp, Exception):
+                    print(f"Warning: Sample failed with error: {resp}")
+                    failed_count += 1
+                else:
+                    valid_responses.append(resp)
+
+            # Update remaining count
+            remaining = num_samples - len(valid_responses)
+
+            if remaining > 0:
+                retry_count += 1
+                print(f"Retrying {remaining} failed requests (attempt {retry_count}/{max_retries})...")
             else:
-                valid_responses.append(resp)
+                break
+
+        if len(valid_responses) < num_samples:
+            print(f"Warning: Only got {len(valid_responses)}/{num_samples} successful responses after {max_retries} retries")
 
         return valid_responses
 
@@ -223,6 +248,8 @@ class OpenRouterClient:
         reasoning: bool = False,
         output_dir: Optional[str] = None,
         filter_fields: bool = True,
+        skip_existing: bool = True,
+        max_retries: int = 5,
     ) -> List[Dict[str, Any]]:
         """Sample multiple responses for multiple prompts.
 
@@ -238,6 +265,8 @@ class OpenRouterClient:
             reasoning: Whether to enable reasoning.
             output_dir: Optional directory to save results after each prompt.
             filter_fields: If True, filter out unnecessary fields from responses.
+            skip_existing: If True, skip prompts whose output files already exist.
+            max_retries: Maximum number of retry attempts for failed requests.
         Returns:
             List of dictionaries with structure:
             {
@@ -249,6 +278,18 @@ class OpenRouterClient:
         results = []
 
         for prompt_idx, prompt in enumerate(tqdm(prompts, desc=f"Sampling prompts ({model})", unit="prompt")):
+            # Check if output file already exists
+            if skip_existing and output_dir:
+                model_name = model.replace("/", "_").replace(":", "_")
+                filename = f"{model_name}_prompt_{prompt_idx}.json"
+                filepath = os.path.join(output_dir, filename)
+
+                if os.path.exists(filepath):
+                    print(
+                        f"Skipping prompt {prompt_idx} - file already exists: {filename}"
+                    )
+                    continue
+
             responses = await self.sample_multiple_concurrent(
                 prompt=prompt,
                 model=model,
@@ -259,6 +300,7 @@ class OpenRouterClient:
                 logprobs=logprobs,
                 top_logprobs=top_logprobs,
                 reasoning=reasoning,
+                max_retries=max_retries,
             )
 
             sample = {
@@ -270,12 +312,16 @@ class OpenRouterClient:
 
             # Save immediately after sampling this prompt
             if output_dir:
-                save_sample_to_json(sample, output_dir, model, prompt_idx, filter_fields)
+                save_sample_to_json(
+                    sample, output_dir, model, prompt_idx, filter_fields, logprobs
+                )
 
         return results
 
 
-def filter_response_fields(response: Dict[str, Any]) -> Dict[str, Any]:
+def filter_response_fields(
+    response: Dict[str, Any], include_logprobs: bool = True
+) -> Dict[str, Any]:
     """Filter out unnecessary fields from OpenRouter API responses.
 
     Removes provider-specific metadata and redundant information to reduce
@@ -283,6 +329,7 @@ def filter_response_fields(response: Dict[str, Any]) -> Dict[str, Any]:
 
     Args:
         response: Raw response dictionary from OpenRouter API.
+        include_logprobs: Whether to include logprobs in filtered output.
 
     Returns:
         Filtered response dictionary with only essential fields.
@@ -307,27 +354,29 @@ def filter_response_fields(response: Dict[str, Any]) -> Dict[str, Any]:
             if "finish_reason" in choice:
                 filtered_choice["finish_reason"] = choice["finish_reason"]
 
-            # Keep logprobs but filter bytes
-            if "logprobs" in choice and choice["logprobs"]:
-                filtered_choice["logprobs"] = {}
-                if "content" in choice["logprobs"]:
-                    filtered_content = []
-                    for token_data in choice["logprobs"]["content"]:
-                        filtered_token = {
-                            "token": token_data["token"],
-                            "logprob": token_data["logprob"],
-                        }
-                        # Filter top_logprobs
-                        if "top_logprobs" in token_data:
-                            filtered_token["top_logprobs"] = [
-                                {
-                                    "token": top_token["token"],
-                                    "logprob": top_token["logprob"],
-                                }
-                                for top_token in token_data["top_logprobs"]
-                            ]
-                        filtered_content.append(filtered_token)
-                    filtered_choice["logprobs"]["content"] = filtered_content
+            # Keep logprobs but filter bytes (only if include_logprobs=True)
+            if include_logprobs and "logprobs" in choice and choice["logprobs"]:
+                # Defensive check: ensure logprobs is a dict before processing
+                if isinstance(choice["logprobs"], dict):
+                    filtered_choice["logprobs"] = {}
+                    if "content" in choice["logprobs"]:
+                        filtered_content = []
+                        for token_data in choice["logprobs"]["content"]:
+                            filtered_token = {
+                                "token": token_data["token"],
+                                "logprob": token_data["logprob"],
+                            }
+                            # Filter top_logprobs
+                            if "top_logprobs" in token_data:
+                                filtered_token["top_logprobs"] = [
+                                    {
+                                        "token": top_token["token"],
+                                        "logprob": top_token["logprob"],
+                                    }
+                                    for top_token in token_data["top_logprobs"]
+                                ]
+                            filtered_content.append(filtered_token)
+                        filtered_choice["logprobs"]["content"] = filtered_content
 
             filtered["choices"].append(filtered_choice)
 
@@ -344,6 +393,7 @@ def save_sample_to_json(
     model_id: str,
     prompt_idx: int,
     filter_fields: bool = True,
+    include_logprobs: bool = True,
 ) -> None:
     """Save a single sampled response to JSON file.
 
@@ -353,6 +403,7 @@ def save_sample_to_json(
         model_id: Model identifier (e.g., "openai/gpt-4").
         prompt_idx: Index of the prompt.
         filter_fields: If True, filter out unnecessary fields from responses.
+        include_logprobs: If True, include logprobs in filtered output.
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -365,7 +416,8 @@ def save_sample_to_json(
             "prompt": sample["prompt"],
             "model": sample["model"],
             "responses": [
-                filter_response_fields(resp) for resp in sample["responses"]
+                filter_response_fields(resp, include_logprobs)
+                for resp in sample["responses"]
             ],
         }
     else:
@@ -384,6 +436,7 @@ def save_samples_to_json(
     output_dir: str,
     model_id: str,
     filter_fields: bool = True,
+    include_logprobs: bool = True,
 ) -> None:
     """Save sampled responses to JSON files, one file per prompt.
 
@@ -392,8 +445,11 @@ def save_samples_to_json(
         output_dir: Directory to save JSON files.
         model_id: Model identifier (e.g., "openai/gpt-4").
         filter_fields: If True, filter out unnecessary fields from responses.
+        include_logprobs: If True, include logprobs in filtered output.
     """
     for prompt_idx, sample in enumerate(samples):
-        save_sample_to_json(sample, output_dir, model_id, prompt_idx, filter_fields)
+        save_sample_to_json(
+            sample, output_dir, model_id, prompt_idx, filter_fields, include_logprobs
+        )
 
     print(f"Saved {len(samples)} prompts to {output_dir} as individual JSON files")

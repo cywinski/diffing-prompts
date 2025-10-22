@@ -6,8 +6,9 @@ dataset:
   source: "huggingface"           # Options: "huggingface", "file"
   dataset_name: "allenai/WildChat"  # HuggingFace dataset identifier
   split: "train"                  # Dataset split
-  num_prompts: 2000            # Number of prompts to sample
+  num_prompts: 1000            # Number of prompts to sample
   seed: 42                        # Random seed for reproducibility
+  sampling_mode: "first"          # How to sample prompts: "first" (take first N) or "random" (random N)
 
   # Prompt extraction
   use_wildchat_format: true       # Use special WildChat conversation extractor
@@ -25,8 +26,8 @@ dataset:
 # Models to sample from (list of arbitrary length)
 # Model IDs from OpenRouter: https://openrouter.ai/models
 models:
-  # - "google/gemma-2-9b-it"
-  - "meta-llama/llama-3.1-8b-instruct"
+  - "meta-llama/llama-3.2-3b-instruct"
+  # - "deepseek/deepseek-chat"
   # - "cloud"
   # Add more models as needed:
   # - "meta-llama/llama-3-70b-instruct"
@@ -38,13 +39,14 @@ api:
 # Sampling parameters
 sampling:
   num_samples_per_prompt: 10  # Number of samples per prompt per model
-  max_tokens: 500            # Maximum tokens to generate
+  max_tokens: 1000            # Maximum tokens to generate
   temperature: 1.0           # Sampling temperature
   top_p: 1.0                 # Nucleus sampling parameter
-  logprobs: false             # Whether to return log probabilities
+  logprobs: false            # Whether to return log probabilities
   top_logprobs: 0            # Number of top logprobs to return per token
   max_tokens_reasoning: 0            # Maximum tokens to generate for reasoning
   reasoning: false            # Whether to enable reasoning
+  max_retries: 5             # Maximum retry attempts for failed requests
 
 # Output configuration
 output:

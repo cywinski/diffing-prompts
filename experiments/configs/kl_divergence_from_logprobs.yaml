@@ -1,0 +1,17 @@
+# Configuration for calculating KL divergence from stored logprobs data
+# No model loading required - uses pre-computed top-k logprobs from both models
+
+# Directory containing response files from model 1 with logprobs
+# Each response file should contain top-k logprobs in the format:
+#   responses[i].choices[0].logprobs.content[j]:
+#     - token: the token string
+#     - logprob: the logprob for this token
+#     - top_logprobs: list of {token, logprob} dicts for top-k alternatives
+responses_dir_model1: "/workspace/projects/diffing-prompts/experiments/results/responses_openrouter/chatgpt-4o-2024-05-13"
+
+# Directory containing response files from model 2 with logprobs
+# Should have same structure as model 1 files, matched by prompt index
+responses_dir_model2: "/workspace/projects/diffing-prompts/experiments/results/responses_openrouter/chatgpt-4o-latest"
+
+# Output directory for KL divergence results
+output_dir: "/workspace/projects/diffing-prompts/experiments/results/kl_4o"

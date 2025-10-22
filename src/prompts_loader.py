@@ -1,6 +1,7 @@
 # ABOUTME: Generic prompt loader for loading prompts from various sources.
 # ABOUTME: Supports HuggingFace datasets, text files, and Python lists with filtering/sampling.
 
+import random
 from typing import Any, Callable, Dict, List, Optional
 
 from datasets import load_dataset
@@ -20,6 +21,7 @@ class PromptLoader:
         max_length: Optional[int] = None,
         filter_fn: Optional[Callable[[Dict[str, Any]], bool]] = None,
         prompt_extractor: Optional[Callable[[Dict[str, Any]], str]] = None,
+        sampling_mode: str = "first",
     ) -> List[str]:
         """Load prompts from a HuggingFace dataset.
 
@@ -29,18 +31,26 @@ class PromptLoader:
             prompt_field: Field name containing the prompt text.
                 For nested fields, use dot notation (e.g., "conversation.0.content").
             num_samples: Number of prompts to sample. If None, returns all.
-            seed: Random seed for sampling.
+            seed: Random seed for shuffling/sampling (only used in 'random' mode).
             min_length: Minimum prompt length in characters.
             max_length: Maximum prompt length in characters.
             filter_fn: Optional custom filter function that takes an item and returns bool.
             prompt_extractor: Optional custom function to extract prompt from item.
                 If provided, overrides prompt_field.
+            sampling_mode: How to sample prompts - 'first' takes first N, 'random' samples randomly.
 
         Returns:
             List of prompt strings.
         """
         print(f"Loading dataset: {dataset_name} (split: {split})...")
         dataset = load_dataset(dataset_name, split=split)
+
+        # Shuffle dataset if using random sampling mode
+        if sampling_mode == "random" and seed is not None:
+            print(f"Shuffling dataset with seed {seed}...")
+            dataset = dataset.shuffle(seed=seed)
+        elif sampling_mode == "random" and seed is None:
+            print("Warning: 'random' sampling mode without seed - results may not be reproducible")
 
         prompts = []
         for item in dataset:
@@ -50,7 +60,6 @@ class PromptLoader:
                 try:
                     content = prompt_extractor(item)
                 except Exception as e:
-                    print(f"Warning: Failed to extract prompt: {e}")
                     continue
             else:
                 # Use field name (supports nested fields with dot notation)
@@ -62,9 +71,9 @@ class PromptLoader:
                         else:
                             content = content[field]
                     content = str(content)
-                except (KeyError, IndexError, TypeError) as e:
-                    print(f"Warning: Field '{prompt_field}' not found in item: {e}")
+                except (KeyError, IndexError, TypeError):
                     continue
+
             # Apply custom filter
             if filter_fn and not filter_fn(item):
                 continue
@@ -77,16 +86,11 @@ class PromptLoader:
 
             prompts.append(content)
 
-            if len(prompts) >= num_samples:
+            # Stop when we have enough prompts
+            if num_samples is not None and len(prompts) >= num_samples:
                 break
 
         print(f"Loaded {len(prompts)} prompts from {dataset_name}")
-
-        # Take first N if requested
-        if num_samples is not None and num_samples < len(prompts):
-            prompts = prompts[:num_samples]
-            print(f"Taking first {num_samples} prompts")
-
         return prompts
 
     @staticmethod
@@ -96,15 +100,17 @@ class PromptLoader:
         seed: Optional[int] = None,
         min_length: Optional[int] = None,
         max_length: Optional[int] = None,
+        sampling_mode: str = "first",
     ) -> List[str]:
-        """Load prompts from a text file (one prompt per line).
+        """Load prompts from a text file.
 
         Args:
             file_path: Path to text file.
             num_samples: Number of prompts to sample. If None, returns all.
-            seed: Random seed for sampling.
+            seed: Random seed for sampling (only used in 'random' mode).
             min_length: Minimum prompt length in characters.
             max_length: Maximum prompt length in characters.
+            sampling_mode: How to sample prompts - 'first' takes first N, 'random' samples randomly.
 
         Returns:
             List of prompt strings.
@@ -123,12 +129,20 @@ class PromptLoader:
             if len(prompts) < original_count:
                 print(f"Filtered {original_count - len(prompts)} prompts by length")
 
-        print(f"Loaded {len(prompts)} prompts from {file_path}")
+        print(f"Total {len(prompts)} prompts from {file_path}")
 
-        # Take first N if requested
+        # Sample prompts based on mode
         if num_samples is not None and num_samples < len(prompts):
-            prompts = prompts[:num_samples]
-            print(f"Taking first {num_samples} prompts")
+            if sampling_mode == "first":
+                prompts = prompts[:num_samples]
+                print(f"Took first {num_samples} prompts")
+            elif sampling_mode == "random":
+                if seed is not None:
+                    random.seed(seed)
+                else:
+                    print("Warning: 'random' sampling mode without seed - results may not be reproducible")
+                prompts = random.sample(prompts, num_samples)
+                print(f"Randomly sampled {num_samples} prompts")
 
         return prompts
 
@@ -137,23 +151,33 @@ class PromptLoader:
         prompts: List[str],
         num_samples: Optional[int] = None,
         seed: Optional[int] = None,
+        sampling_mode: str = "first",
     ) -> List[str]:
-        """Load prompts from a Python list (for testing or custom sources).
+        """Load prompts from a Python list.
 
         Args:
             prompts: List of prompt strings.
             num_samples: Number of prompts to sample. If None, returns all.
-            seed: Random seed for sampling.
+            seed: Random seed for sampling (only used in 'random' mode).
+            sampling_mode: How to sample prompts - 'first' takes first N, 'random' samples randomly.
 
         Returns:
             List of prompt strings.
         """
-        print(f"Loaded {len(prompts)} prompts from list")
+        print(f"Total {len(prompts)} prompts from list")
 
-        # Take first N if requested
+        # Sample prompts based on mode
         if num_samples is not None and num_samples < len(prompts):
-            prompts = prompts[:num_samples]
-            print(f"Taking first {num_samples} prompts")
+            if sampling_mode == "first":
+                prompts = prompts[:num_samples]
+                print(f"Took first {num_samples} prompts")
+            elif sampling_mode == "random":
+                if seed is not None:
+                    random.seed(seed)
+                else:
+                    print("Warning: 'random' sampling mode without seed - results may not be reproducible")
+                prompts = random.sample(prompts, num_samples)
+                print(f"Randomly sampled {num_samples} prompts")
 
         return prompts
 

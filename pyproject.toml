@@ -15,8 +15,12 @@ dependencies = [
     "jupyter>=1.1.1",
     "datasets>=4.2.0",
     "accelerate>=1.10.1",
-    "transformers==4.51.3",
+    "transformers==4.57.1",
     "peft==0.15.2",
     "openai>=2.3.0",
     "matplotlib>=3.10.7",
+    "omegaconf>=2.3.0",
+    "triton>=3.5.0",
+    "bitsandbytes>=0.48.1",
+    "google-genai>=1.46.0",
 ]

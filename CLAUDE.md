@@ -70,11 +70,10 @@ Possibly then, in order to find such prompts we will use model internals to opti
 
 1. User writes a spec in `specs/` describing the experiment
 2. User says: "implement this spec"
-3. **You implement everything** (code, config, bash script)
+3. **You implement everything** (code, config)
 4. User reviews your implementation
-5. User tests by running the bash script
-6. **When satisfied, user says: "commit this"**
-7. You commit with a clear message
+5. **When satisfied, user says: "commit this"**
+6. You commit with a clear message
 
 ### IMPORTANT: Committing Behavior
 
@@ -107,14 +106,7 @@ When given a spec, you must create a complete, runnable experiment:
    - Use placeholder values that can be easily changed
    - Add comments explaining each parameter
 
-3. **Create bash script** in `experiments/scripts/`:
-   - References the config file
-   - Sets seed explicitly
-   - Logs to `experiments/logs/` with timestamp in filename
-   - Saves results to `experiments/results/` with timestamp in path
-   - Runnable without modifications
-
-4. **Stop here** - Do NOT commit yet
+3. **Stop here** - Do NOT commit yet
    - User will review your implementation
    - User will test the script
    - User will ask you to commit when ready
@@ -151,31 +143,6 @@ When given a spec, you must create a complete, runnable experiment:
 - Config files should be complete and self-contained
 - Never hardcode hyperparameters in scripts
 
-### Bash Scripts for Reproducibility
-
-- **Create bash scripts for each experiment** in `experiments/scripts/`
-- Scripts should:
-  - Set seeds explicitly
-  - Reference specific config files
-  - Include clear comments about experiment purpose
-  - Be runnable without modification
-  - Log outputs to timestamped files
-  - Save results to timestamped directories
-
-Example structure:
-
-```bash
-#!/bin/bash
-
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-OUTPUT_DIR="experiments/results/l1_sweep"
-LOG_FILE="experiments/logs/l1_sweep_${TIMESTAMP}.log"
-
-python scripts/train.py \
-  --config experiments/configs/sae_l1_sweep.yaml \
-  --output_dir "${OUTPUT_DIR}" \
-  2>&1 | tee "${LOG_FILE}"
-```
 
 ## Code Style
 
@@ -226,7 +193,6 @@ When given a specification, create all of these:
 
 - [ ] All code implemented in `src/` (no placeholders!)
 - [ ] YAML config in `experiments/configs/`
-- [ ] Bash script in `experiments/scripts/`
 - [ ] Script is executable and runnable immediately
 - [ ] All dependencies documented
 

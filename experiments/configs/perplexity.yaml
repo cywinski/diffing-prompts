@@ -1,0 +1,21 @@
+# Configuration for calculating perplexity of responses using an evaluation model
+# Uses a third, independent model to evaluate responses from two other models
+
+# Evaluation model (independent model for measuring perplexity)
+# This should be different from both model_1 and model_2
+eval_model_name: "Qwen/Qwen3-14B"
+
+# Directory containing response files from model 1
+# Each file should have responses with text content
+responses_dir_model1: "/workspace/projects/diffing-prompts/experiments/results/responses_openrouter/deepseek-chat"
+
+# Directory containing response files from model 2
+# Should have same structure as model 1 files, matched by prompt index
+responses_dir_model2: "/workspace/projects/diffing-prompts/experiments/results/responses_openrouter/deepseek-r1"
+
+# Output directory for perplexity results
+output_dir: "/workspace/projects/diffing-prompts/experiments/results/perplexity_deepseek_qwen3-14b"
+
+# Device mapping strategy for model loading
+# Options: "auto", "cuda:0", "cpu", etc.
+device_map: "auto"

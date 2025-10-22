@@ -1,373 +1,309 @@
-# ABOUTME: Demo notebook for calculating KL divergence between two models' full probability distributions.
-# ABOUTME: Loads both models, extracts full vocabulary probabilities, and calculates KL divergence.
+# ABOUTME: Demo notebook for visualizing and analyzing KL divergence results between two models.
+# ABOUTME: Loads pre-calculated KL divergence results and creates various plots and visualizations.
 
 # %%
-import glob
 import json
 import os
+from collections import defaultdict
 
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+import numpy as np
+from tqdm import tqdm
+from transformers import AutoTokenizer
 
 # %%
 # Parameters
-model_1_name = "google/gemma-2-9b-it"
-model_2_name = "bcywinski/gemma-2-9b-it-taboo-cloud"
-responses_dir_model1 = "/workspace/projects/diffing-prompts/experiments/results/responses_openrouter/gemma-2-9b-it"
-responses_dir_model2 = "/workspace/projects/diffing-prompts/experiments/results/responses_openrouter/gemma-2-9b-it-taboo-cloud"
-output_dir = "/workspace/projects/diffing-prompts/experiments/results/kl"  # Where to save the KL results
-max_prompts = None  # Set to a number to limit, or None to process all
-os.makedirs(output_dir, exist_ok=True)
-# %%
-# Load both models and tokenizers
-print(f"Loading model 1: {model_1_name}")
-tokenizer_1 = AutoTokenizer.from_pretrained(model_1_name, trust_remote_code=True)
-model_1 = AutoModelForCausalLM.from_pretrained(
-    model_1_name,
-    torch_dtype=torch.bfloat16,
-    device_map="auto",
-    trust_remote_code=True,
-)
-print("Model 1 loaded successfully")
-
-print(f"\nLoading model 2: {model_2_name}")
-tokenizer_2 = AutoTokenizer.from_pretrained(model_2_name, trust_remote_code=True)
-model_2 = AutoModelForCausalLM.from_pretrained(
-    model_2_name,
-    torch_dtype=torch.bfloat16,
-    device_map="auto",
-    trust_remote_code=True,
-)
-print("Model 2 loaded successfully")
+results_file = "/workspace/projects/diffing-prompts/experiments/results/kl_llama-3.2-1b-instruct/kl_divergence_results_sorted.json"
+tokenizer_name = "meta-llama/Llama-3.2-1B-Instruct"
 
 # %%
-# Find all response files for both models
-responses_files_model1 = sorted(glob.glob(os.path.join(responses_dir_model1, "*.json")))
-responses_files_model2 = sorted(glob.glob(os.path.join(responses_dir_model2, "*.json")))
-
-print(f"\nFound {len(responses_files_model1)} response files for model 1")
-print(f"Found {len(responses_files_model2)} response files for model 2")
-
-# Create a mapping from prompt index to files
-# Extract prompt indices from filenames
-def get_prompt_index(filepath):
-    """Extract prompt index from filename like 'model_prompt_123.json'"""
-    basename = os.path.basename(filepath)
-    # Find the last occurrence of 'prompt_' and extract number
-    parts = basename.split('prompt_')
-    if len(parts) > 1:
-        idx = parts[-1].split('.')[0]
-        try:
-            return int(idx)
-        except ValueError:
-            return None
-    return None
-
-# Build mappings
-model1_files_by_idx = {}
-for f in responses_files_model1:
-    idx = get_prompt_index(f)
-    if idx is not None:
-        model1_files_by_idx[idx] = f
-
-model2_files_by_idx = {}
-for f in responses_files_model2:
-    idx = get_prompt_index(f)
-    if idx is not None:
-        model2_files_by_idx[idx] = f
-
-# Find common prompt indices
-common_indices = sorted(set(model1_files_by_idx.keys()) & set(model2_files_by_idx.keys()))
-print(f"\nFound {len(common_indices)} prompts with responses from both models")
-
-if max_prompts is not None:
-    common_indices = common_indices[:max_prompts]
-    print(f"Processing first {len(common_indices)} prompts")
+# Load tokenizer (same one used for KL calculation)
+print(f"Loading tokenizer: {tokenizer_name}")
+tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, trust_remote_code=True)
+print("Tokenizer loaded successfully")
 
 # %%
-def calculate_kl_divergence_full_vocab(
+# Load results from saved file
+with open(results_file, "r") as f:
+    results = json.load(f)
+
+print(f"Loaded {len(results)} results from: {results_file}")
+
+# %%
+# Helper function to load response tokens from file
+def load_response_tokens_from_file(response_file: str, response_idx: int = 0):
+    """Load response tokens from a saved response JSON file.
+
+    Args:
+        response_file: Path to the response JSON file
+        response_idx: Index of the response to load (default: 0)
+
+    Returns:
+        List of token strings for the specified response
+    """
+    with open(response_file, "r") as fp:
+        data = json.load(fp)
+
+    if response_idx >= len(data["responses"]):
+        raise IndexError(
+            f"Response index {response_idx} out of range. File has {len(data['responses'])} responses."
+        )
+
+    # Extract text response and tokenize using the tokenizer
+    response_text = data["responses"][response_idx]["choices"][0]["message"]["content"]
+
+    # Tokenize the response text to get token IDs
+    token_ids = tokenizer.encode(response_text, add_special_tokens=False)
+
+    # Convert token IDs back to token strings
+    response_tokens = [tokenizer.decode([tid]) for tid in token_ids]
+
+    return response_tokens
+
+
+# %%
+def visualize_response_with_kl(
     prompt: str,
     response_tokens: list,
-    model_1,
-    tokenizer_1,
-    model_2,
-    tokenizer_2,
+    kl_per_token: list,
+    title: str = "Response Tokens with KL Divergence",
+    cmap_name: str = "Reds",
+    figsize: tuple = (14, 5),
+    min_value: float = None,
+    max_value: float = None,
 ):
-    """Calculate KL divergence between two models' full vocabulary distributions.
-
-    Calculates KL divergence for responses from model 1: KL(model_1 || model_2)
+    """Visualize response tokens with background heatmap based on KL divergence.
 
     Args:
         prompt: The input prompt text
         response_tokens: List of response token strings
-        model_1: First model (P distribution)
-        tokenizer_1: Tokenizer for first model
-        model_2: Second model (Q distribution)
-        tokenizer_2: Tokenizer for second model
-
-    Returns:
-        Average KL divergence per token (float), list of per-token KLs
+        kl_per_token: List of KL divergence values per token
+        title: Plot title
+        cmap_name: Colormap name (single-color maps: 'Reds', 'Blues', 'Greens', 'Purples', 'Oranges')
+        figsize: Figure size (width, height)
+        min_value: Minimum value for the colormap (overrides KL values' min for color scaling if not None)
+        max_value: Maximum value for the colormap (overrides KL values' max for color scaling if not None)
     """
-    # Prepare prompt with chat template
-    user_prompt = tokenizer_1.apply_chat_template(
-        [{"role": "user", "content": prompt}],
-        tokenize=False,
-        add_special_tokens=False,
-        add_generation_prompt=True,
-        add_bos=False,
+    assert len(kl_per_token) == len(response_tokens)
+    fig, (ax_prompt, ax_response) = plt.subplots(
+        2, 1, figsize=figsize, gridspec_kw={"height_ratios": [0.4, 3], "hspace": 0.15}
     )
-    user_prompt_tokens = tokenizer_1.encode(
-        user_prompt,
-        add_special_tokens=False,
-        return_tensors="pt",
-    )[0, :]
 
-    # Convert response tokens to ids
-    response_token_ids = []
-    for token in response_tokens:
-        token_id = tokenizer_1.encode(token, add_special_tokens=False)[0]
-        response_token_ids.append(token_id)
-    response_token_ids = torch.tensor(response_token_ids)
+    # Display prompt
+    ax_prompt.text(
+        0.05,
+        0.5,
+        f"Prompt: {prompt}",
+        fontsize=10,
+        verticalalignment="center",
+        wrap=True,
+    )
+    ax_prompt.axis("off")
+    ax_prompt.set_xlim(0, 1)
+    ax_prompt.set_ylim(0, 1)
+    ax_prompt.margins(0)
 
-    # Combine prompt and response tokens
-    tokens = torch.cat([user_prompt_tokens, response_token_ids])
-    tokens = tokens.to(model_1.device)
+    # Prepare response visualization
+    ax_response.axis("off")
+    ax_response.set_xlim(0, 1)
+    ax_response.set_ylim(0, 1)
 
-    # Get full vocabulary log probabilities from model 1
-    with torch.no_grad():
-        outputs_1 = model_1(tokens.unsqueeze(0))
-        logits_1 = outputs_1.logits
-        log_probs_1 = torch.log_softmax(logits_1, dim=-1)
-        # Extract log probs for the response tokens
-        log_probs_1 = log_probs_1[0, len(user_prompt_tokens) - 1 : -1].cpu()
+    # Normalize KL values for colormap
+    kl_array = np.array(kl_per_token)
+    vmin = min_value if min_value is not None else kl_array.min()
+    vmax = max_value if max_value is not None else kl_array.max()
+    norm = plt.Normalize(vmin=vmin, vmax=vmax)
+    cmap = plt.cm.get_cmap(cmap_name)
 
-    # Get full vocabulary log probabilities from model 2
-    # Assuming same tokenizer, so same tokens work
-    tokens_2 = tokens.to(model_2.device)
-    with torch.no_grad():
-        outputs_2 = model_2(tokens_2.unsqueeze(0))
-        logits_2 = outputs_2.logits
-        log_probs_2 = torch.log_softmax(logits_2, dim=-1)
-        # Extract log probs for the response tokens
-        log_probs_2 = log_probs_2[0, len(user_prompt_tokens) - 1 : -1].cpu()
+    # Layout parameters
+    x_pos = 0.02
+    y_pos = 0.93
+    line_height = 0.065
+    max_width = 0.96
 
-    # Calculate KL divergence: KL(P||Q) = sum(P * log(P/Q))
-    # In log space: KL(P||Q) = sum(exp(log_P) * (log_P - log_Q))
-    # Using PyTorch's kl_div: expects input=log(Q), target=log(P)
-    # F.kl_div computes sum(exp(target) * (target - input))
-    kl_per_token = torch.nn.functional.kl_div(
-        log_probs_2,  # Q distribution (model 2)
-        log_probs_1,  # P distribution (model 1)
-        reduction="none",
-        log_target=True,
-    ).sum(dim=-1)  # Sum over vocabulary dimension
+    # Draw tokens with colored backgrounds
+    for token, kl_val in zip(response_tokens, kl_per_token):
+        # Estimate token width (rough approximation)
+        token_width = len(token) * 0.012
 
-    # Average over tokens
-    avg_kl = kl_per_token.mean().item()
+        # Check if we need to wrap to next line
+        if x_pos + token_width > max_width:
+            x_pos = 0.02
+            y_pos -= line_height
 
-    return avg_kl, kl_per_token.tolist()
+        # Get color for this KL value
+        color = cmap(norm(kl_val))
 
-# %%
-# Calculate KL divergence for each prompt
-results = []
+        # Draw background rectangle
+        rect = mpatches.Rectangle(
+            (x_pos, y_pos - 0.05),
+            token_width,
+            0.06,
+            facecolor=color,
+            edgecolor="none",
+            transform=ax_response.transAxes,
+        )
+        ax_response.add_patch(rect)
 
-for prompt_idx in common_indices:
-    file_model1 = model1_files_by_idx[prompt_idx]
-    file_model2 = model2_files_by_idx[prompt_idx]
+        # Draw token text
+        ax_response.text(
+            x_pos + token_width / 2,
+            y_pos - 0.02,
+            token.replace("\n", "\\n"),
+            fontsize=9,
+            verticalalignment="center",
+            horizontalalignment="center",
+            family="monospace",
+        )
 
-    # Load responses from model 1
-    with open(file_model1, "r") as fp:
-        data_model1 = json.load(fp)
+        x_pos += token_width + 0.005
 
-    # Load responses from model 2
-    with open(file_model2, "r") as fp:
-        data_model2 = json.load(fp)
+    # Add colorbar
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cbar = plt.colorbar(
+        sm, ax=ax_response, orientation="horizontal", pad=0.01, fraction=0.04, aspect=50
+    )
+    cbar.set_label("KL Divergence per Token", fontsize=9)
 
-    print(f"\nProcessing prompt {prompt_idx}:")
-    print(f"  Model 1: {os.path.basename(file_model1)}")
-    print(f"  Model 2: {os.path.basename(file_model2)}")
+    plt.suptitle(title, fontsize=12, fontweight="bold", y=0.98)
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
 
-    prompt = data_model1["prompt"]
+    return fig
 
-    # Verify prompts match
-    if data_model1["prompt"] != data_model2["prompt"]:
-        print("  WARNING: Prompts don't match! Skipping.")
-        continue
-
-    # Process responses from model 1: calculate KL(M1||M2)
-    print("  Model 1 responses:")
-    response_kls_model1 = []
-    for response_data in data_model1["responses"]:
-        # Extract tokens from response
-        logprobs_data = response_data["choices"][0]["logprobs"]["content"]
-        response_tokens = [token_data["token"] for token_data in logprobs_data]
-
-        try:
-            # KL(model_1 || model_2) using model 1's response
-            avg_kl, per_token_kls = calculate_kl_divergence_full_vocab(
-                prompt=prompt,
-                response_tokens=response_tokens,
-                model_1=model_1,
-                tokenizer_1=tokenizer_1,
-                model_2=model_2,
-                tokenizer_2=tokenizer_2,
-            )
-            response_kls_model1.append(avg_kl)
-            print(f"    KL(M1||M2): {avg_kl:.6f}")
-        except Exception as e:
-            print(f"    Error: {e}")
-            continue
-
-    # Process responses from model 2: calculate KL(M2||M1)
-    print("  Model 2 responses:")
-    response_kls_model2 = []
-    for response_data in data_model2["responses"]:
-        # Extract tokens from response
-        logprobs_data = response_data["choices"][0]["logprobs"]["content"]
-        response_tokens = [token_data["token"] for token_data in logprobs_data]
-
-        try:
-            # KL(model_2 || model_1) using model 2's response
-            avg_kl, per_token_kls = calculate_kl_divergence_full_vocab(
-                prompt=prompt,
-                response_tokens=response_tokens,
-                model_1=model_2,  # Swapped: model_2 is P
-                tokenizer_1=tokenizer_2,
-                model_2=model_1,  # Swapped: model_1 is Q
-                tokenizer_2=tokenizer_1,
-            )
-            response_kls_model2.append(avg_kl)
-            print(f"    KL(M2||M1): {avg_kl:.6f}")
-        except Exception as e:
-            print(f"    Error: {e}")
-            continue
-
-    if len(response_kls_model1) == 0 and len(response_kls_model2) == 0:
-        print("  Skipped (no valid responses)")
-        continue
-
-    # Calculate averages
-    avg_kl_model1 = sum(response_kls_model1) / len(response_kls_model1) if response_kls_model1 else 0
-    avg_kl_model2 = sum(response_kls_model2) / len(response_kls_model2) if response_kls_model2 else 0
-
-    # Average of both directions (symmetric KL divergence)
-    average_kl = (avg_kl_model1 + avg_kl_model2) / 2
-
-    print(f"  Average KL(M1||M2): {avg_kl_model1:.6f}")
-    print(f"  Average KL(M2||M1): {avg_kl_model2:.6f}")
-    print(f"  Symmetric Average: {average_kl:.6f}")
-
-    results.append({
-        "prompt_idx": prompt_idx,
-        "file_model1": file_model1,
-        "file_model2": file_model2,
-        "prompt": prompt,
-        "average_kl": average_kl,
-        "avg_kl_model1_to_model2": avg_kl_model1,
-        "avg_kl_model2_to_model1": avg_kl_model2,
-        "response_kls_model1": response_kls_model1,
-        "response_kls_model2": response_kls_model2,
-    })
 
 # %%
-# Sort results by average KL divergence (highest first) and save to JSON
-import datetime
+# Print summary statistics
+print(f"\nSummary Statistics:")
+print(f"Total prompts: {len(results)}")
+kl_values = [r["average_kl"] for r in results]
+print(f"Average KL: {np.mean(kl_values):.6f}")
+print(f"Median KL: {np.median(kl_values):.6f}")
+print(f"Min KL: {np.min(kl_values):.6f}")
+print(f"Max KL: {np.max(kl_values):.6f}")
 
-results.sort(key=lambda x: x["average_kl"], reverse=True)
-
-# Create detailed results with prompts, average KL and per-response KL values
-kl_results = [
-    {
-        "prompt_idx": r["prompt_idx"],
-        "prompt": r["prompt"],
-        "average_kl_symmetric": r["average_kl"],
-        "avg_kl_model1_to_model2": r["avg_kl_model1_to_model2"],
-        "avg_kl_model2_to_model1": r["avg_kl_model2_to_model1"],
-        "response_kls_model1": r["response_kls_model1"],
-        "response_kls_model2": r["response_kls_model2"],
-        "file_model1": r["file_model1"],
-        "file_model2": r["file_model2"],
-    }
-    for i, r in enumerate(results)
+# %%
+# Distribution of KL per token values
+kl_per_token_values = [
+    y for x in results[:100] for y in x["response_kls_model2_per_token"]
 ]
-
-# Save KL results to JSON file
-output_file = os.path.join(output_dir, "prompt_kl_values_full_vocab.json")
-with open(output_file, "w") as f:
-    json.dump({
-        "prompt_kl_values": kl_results,
-        "metadata": {
-            "model_1": model_1_name,
-            "model_2": model_2_name,
-            "n_prompts": len(kl_results),
-            "calculation_method": "symmetric_full_vocabulary_kl_divergence",
-            "description": "Average of KL(M1||M2) on M1 responses and KL(M2||M1) on M2 responses",
-            "timestamp": datetime.datetime.now().isoformat()
-        }
-    }, f, indent=2)
-
-print("\n" + "="*80)
-print("SORTED RESULTS (highest KL divergence first):")
-print("="*80)
-print(f"Results saved to: {output_file}")
-
-# %%
-for i, result in enumerate(results, 1):
-    print(f"\n{i}. Prompt {result['prompt_idx']}: Symmetric Average KL: {result['average_kl']:.6f}")
-    print(f"   KL(M1||M2): {result['avg_kl_model1_to_model2']:.6f}")
-    print(f"   KL(M2||M1): {result['avg_kl_model2_to_model1']:.6f}")
-    print(f"   Prompt: {result['prompt'][:100]}...")
-    if i >= 10:
-        break
-
-# %%
-# load from file
-kl_results = json.load(
-    open(os.path.join(output_dir, "prompt_kl_values_full_vocab.json"))
-)
-# %%
-import matplotlib.pyplot as plt
-
-# Extract KL values
-kl_m1_to_m2 = [r["avg_kl_model1_to_model2"] for r in kl_results["prompt_kl_values"]]
-kl_m2_to_m1 = [r["avg_kl_model2_to_model1"] for r in kl_results["prompt_kl_values"]]
-
-# Create scatter plot
-plt.figure(figsize=(10, 10))
-plt.scatter(kl_m1_to_m2, kl_m2_to_m1, alpha=0.5)
-plt.xlabel("KL(gemma-2-9b-it || gemma-2-9b-it-taboo-cloud)", fontsize=14)
-plt.ylabel("KL(gemma-2-9b-it-taboo-cloud || gemma-2-9b-it)", fontsize=14)
-
-
-plt.title("KL Divergence", fontsize=14)
-plt.legend()
+plt.figure(figsize=(10, 6))
+plt.hist(kl_per_token_values, bins=50, alpha=0.7, edgecolor="black")
+plt.xlabel("KL Divergence per Token", fontsize=14)
+plt.ylabel("Frequency", fontsize=14)
+plt.title("Distribution of KL Divergence per Token Values")
 plt.grid(True, alpha=0.3)
-# Make axes equal to preserve aspect ratio
-plt.axis("equal")
-plt.tight_layout()
 plt.show()
-# %%
-embedding_results = json.load(
-    open(
-        "/workspace/projects/diffing-prompts/experiments/results/embeddings_similarity/prompt_embedding_similarities.json"
-    )
-)
-# %%
-emb_indices = []
-emb_sims = []
-for res in embedding_results["prompt_similarities"]:
-    emb_indices.append(res["prompt_idx"])
-    emb_sims.append(res["avg_similarity"])
 
 # %%
-kl_indices = []
-kl_sims = []
-for res in kl_results["prompt_kl_values"]:
-    kl_indices.append(res["prompt_idx"])
-    kl_sims.append(res["average_kl_symmetric"])
+# Plot: Response length vs KL divergence
+responses_len = [len(y) for x in results for y in x["response_kls_model2_per_token"]]
+kls = [y for x in results for y in x["response_kls_model2_avg"]]
+
+plt.figure(figsize=(10, 6))
+plt.scatter(responses_len, kls, alpha=0.5)
+plt.xlabel("Length of response", fontsize=18)
+plt.ylabel("KL", fontsize=16)
+plt.grid(True, alpha=0.3)
+plt.title("KL Divergence vs Response Length")
+plt.show()
 
 # %%
-plt.scatter(kl_sims, emb_sims, alpha=0.5)
+# Plot: Distribution of KL values
+plt.figure(figsize=(10, 6))
+plt.hist(kl_values, bins=50, alpha=0.7, edgecolor="black")
 plt.xlabel("KL Divergence", fontsize=14)
-plt.ylabel("Embedding Cosine Similarity", fontsize=14)
+plt.ylabel("Frequency", fontsize=14)
+plt.title("Distribution of KL Divergence Values")
+plt.grid(True, alpha=0.3)
+plt.show()
+
+# %%
+# Print top 10 prompts with highest KL
+print("\nTop 10 prompts with highest KL divergence:")
+print("-" * 80)
+for i, result in enumerate(results[:10], 1):
+    print(f"{i:2d}. Prompt {result['prompt_idx']}: {result['average_kl']:.6f}")
+    print(f"    {result['prompt'][:100]}...")
+    print()
+
+# %%
+ind = 400
+visualize_n = 3
+# Visualize all responses for the selected prompt, sorted by average KL divergence
+if len(results) > 0:
+    top_result = results[ind]
+    num_responses = len(top_result["response_kls_model2_per_token"])
+
+    # Sort response indices by average KL (descending)
+    sorted_indices = sorted(
+        range(num_responses),
+        key=lambda idx: top_result["response_kls_model2_avg"][idx],
+        reverse=True,
+    )
+
+    for rank, response_idx in enumerate(sorted_indices[:visualize_n], 1):
+        response_tokens = load_response_tokens_from_file(
+            top_result["file_model2"], response_idx
+        )
+
+        fig = visualize_response_with_kl(
+            prompt=top_result["prompt"],
+            response_tokens=response_tokens,
+            kl_per_token=top_result["response_kls_model2_per_token"][response_idx],
+            title=(
+                f"Prompt {top_result['prompt_idx']} - Response {response_idx} "
+                f"(Sorted Rank: {rank}, Avg KL: {top_result['response_kls_model2_avg'][response_idx]:.4f})"
+            ),
+            cmap_name="Reds",
+            min_value=0,
+            max_value=10,
+        )
+        plt.show()
+
+
+# %%
+# Calculate average KL per token across all results
+token_kl_values = defaultdict(list)
+
+print("\nAggregating KL values per token across all results...")
+for result in tqdm(results, desc="Processing results"):
+    # Load response tokens from file for each response
+    for response_idx in range(len(result["response_kls_model2_per_token"])):
+        response_tokens = load_response_tokens_from_file(
+            result["file_model2"], response_idx
+        )
+        kl_values = result["response_kls_model2_per_token"][response_idx]
+
+        # Aggregate KL values by token
+        for token, kl in zip(response_tokens, kl_values):
+            token_kl_values[token].append(kl)
+
+print(f"Found {len(token_kl_values)} unique tokens across all responses")
+
+# %%
+# Calculate average KL per token
+token_avg_kl = {}
+for token, kl_list in tqdm(token_kl_values.items(), desc="Calculating averages"):
+    token_avg_kl[token] = sum(kl_list) / len(kl_list)
+
+# Sort by average KL (highest first)
+sorted_tokens = sorted(token_avg_kl.items(), key=lambda x: x[1], reverse=True)
+
+# %%
+# Print top 30 tokens with highest average KL (filtered by minimum count)
+min_count = 10
+print(f"\nTop 30 tokens with highest average KL divergence (min count: {min_count}):")
+print("-" * 60)
+filtered_tokens = [
+    (token, avg_kl)
+    for token, avg_kl in sorted_tokens
+    if len(token_kl_values[token]) >= min_count
+]
+for i, (token, avg_kl) in enumerate(filtered_tokens[:30], 1):
+    token_repr = repr(token)
+    count = len(token_kl_values[token])
+    print(f"{i:2d}. {token_repr:20s} | Avg KL: {avg_kl:.6f} | Count: {count}")
+
 # %%

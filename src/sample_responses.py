@@ -3,14 +3,13 @@
 
 import argparse
 import asyncio
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 import yaml
 from dotenv import load_dotenv
 
-from openrouter_client import OpenRouterClient, save_samples_to_json
+from openrouter_client import OpenRouterClient
 from prompts_loader import (
     PromptLoader,
     wildchat_language_filter,
@@ -45,6 +44,7 @@ async def sample_responses_for_model(
     api_key: Optional[str] = None,
     base_url: Optional[str] = None,
     reasoning: bool = False,
+    max_retries: int = 5,
 ) -> None:
     """Sample responses for a single model.
 
@@ -61,6 +61,7 @@ async def sample_responses_for_model(
         api_key: Optional API key override.
         base_url: Optional API base URL override.
         reasoning: Whether to enable reasoning.
+        max_retries: Maximum number of retry attempts for failed requests.
     """
     print(f"\n{'='*60}")
     print(f"Sampling responses for model: {model}")
@@ -81,6 +82,7 @@ async def sample_responses_for_model(
         top_logprobs=top_logprobs,
         reasoning=reasoning,
         output_dir=output_dir,
+        max_retries=max_retries,
     )
 
     print(f"✓ Completed sampling for {model}")
@@ -138,6 +140,7 @@ async def main():
             max_length=dataset_config.get("max_length"),
             filter_fn=filter_fn,
             prompt_extractor=prompt_extractor,
+            sampling_mode=dataset_config.get("sampling_mode", "first"),
         )
     elif source == "file":
         prompts = PromptLoader.load_from_file(
@@ -146,6 +149,7 @@ async def main():
             seed=dataset_config.get("seed"),
             min_length=dataset_config.get("min_length"),
             max_length=dataset_config.get("max_length"),
+            sampling_mode=dataset_config.get("sampling_mode", "first"),
         )
     else:
         raise ValueError(f"Unknown dataset source: {source}")
@@ -182,6 +186,7 @@ async def main():
             output_dir=str(output_dir),
             base_url=base_url,
             reasoning=sampling_config["reasoning"],
+            max_retries=sampling_config.get("max_retries", 5),
         )
         tasks.append(task)
 
