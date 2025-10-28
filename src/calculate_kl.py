@@ -23,9 +23,10 @@ def save_stage1_intermediate(
     prompt_idx: int,
     response_idx: int,
     prompt: str,
-    response_token_ids: list,
+    response_text: str,
     user_prompt_tokens: list,
     log_probs_1: torch.Tensor,
+    reasoning_text: str = None,
 ):
     """Save intermediate results from stage 1 (model_1 log probabilities).
 
@@ -34,9 +35,10 @@ def save_stage1_intermediate(
         prompt_idx: Index of the prompt
         response_idx: Index of the response
         prompt: The prompt text
-        response_token_ids: List of response token IDs
+        response_text: The response text
         user_prompt_tokens: List of user prompt token IDs
         log_probs_1: Log probabilities from model_1 [num_tokens, vocab_size]
+        reasoning_text: Optional reasoning trace
     """
     os.makedirs(intermediate_dir, exist_ok=True)
 
@@ -44,7 +46,8 @@ def save_stage1_intermediate(
         "prompt_idx": prompt_idx,
         "response_idx": response_idx,
         "prompt": prompt,
-        "response_token_ids": response_token_ids,
+        "response_text": response_text,
+        "reasoning_text": reasoning_text,
         "user_prompt_tokens": user_prompt_tokens,
         "log_probs_1": log_probs_1,  # Keep as tensor
     }
@@ -76,21 +79,33 @@ def load_stage1_intermediate(intermediate_dir: str, prompt_idx: int, response_id
 
 def compute_model_log_probs(
     prompt: str,
-    response_token_ids: list,
+    response_text: str,
     model,
     tokenizer,
+    reasoning_text: str = None,
+    thinking_token_start: str = "<think>",
+    thinking_token_end: str = "</think>",
 ):
     """Compute log probabilities for a model given prompt and response.
 
     Args:
         prompt: The input prompt text
-        response_token_ids: List of response token IDs
+        response_text: The response text (content)
         model: The model to compute log probs with
         tokenizer: Tokenizer for the model
+        reasoning_text: Optional reasoning trace to include before response
+        thinking_token_start: Start token for reasoning (default: "<think>")
+        thinking_token_end: End token for reasoning (default: "</think>")
 
     Returns:
         Tuple of (user_prompt_tokens as list, log_probs as tensor [num_tokens, vocab_size])
     """
+    # Format response with reasoning if provided
+    if reasoning_text is not None:
+        full_response_text = f"{thinking_token_start}{reasoning_text}{thinking_token_end}{response_text}"
+    else:
+        full_response_text = response_text
+
     # Prepare prompt with chat template
     user_prompt = tokenizer.apply_chat_template(
         [{"role": "user", "content": prompt}],
@@ -104,6 +119,12 @@ def compute_model_log_probs(
         add_special_tokens=False,
         return_tensors="pt",
     )[0, :]
+
+    # Tokenize response
+    response_token_ids = tokenizer.encode(
+        full_response_text,
+        add_special_tokens=False,
+    )
 
     # Combine prompt and response tokens
     tokens = torch.cat([user_prompt_tokens, torch.tensor(response_token_ids)])
@@ -143,6 +164,11 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
 
     # Set intermediate directory (used for stage1 and stage2)
     intermediate_dir = config.get("intermediate_dir", os.path.join(config.output_dir, "intermediate"))
+
+    # Get reasoning config
+    include_reasoning = config.get("include_reasoning", False)
+    thinking_token_start = config.get("thinking_token_start", "<think>")
+    thinking_token_end = config.get("thinking_token_end", "</think>")
 
     # Load models based on stage
     if stage in ["all", "stage1"]:
@@ -184,14 +210,19 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
 
             for response_idx, response_data in enumerate(data_model2["responses"]):
                 response_text = response_data["choices"][0]["message"]["content"]
-                token_ids = tokenizer_1.encode(response_text, add_special_tokens=False)
+                reasoning_text = None
+                if include_reasoning:
+                    reasoning_text = response_data["choices"][0]["message"].get("reasoning")
 
                 try:
                     user_prompt_tokens, log_probs_1 = compute_model_log_probs(
                         prompt=prompt,
-                        response_token_ids=token_ids,
+                        response_text=response_text,
                         model=model_1,
                         tokenizer=tokenizer_1,
+                        reasoning_text=reasoning_text,
+                        thinking_token_start=thinking_token_start,
+                        thinking_token_end=thinking_token_end,
                     )
 
                     save_stage1_intermediate(
@@ -199,9 +230,10 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
                         prompt_idx=prompt_idx,
                         response_idx=response_idx,
                         prompt=prompt,
-                        response_token_ids=token_ids,
+                        response_text=response_text,
                         user_prompt_tokens=user_prompt_tokens,
                         log_probs_1=log_probs_1,
+                        reasoning_text=reasoning_text,
                     )
                 except Exception as e:
                     print(f"Error processing prompt {prompt_idx}, response {response_idx}: {e}")
@@ -237,15 +269,18 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
 
                     prompt = stage1_data["prompt"]
                     response_text = stage1_data["response_text"]
-                    response_token_ids = stage1_data["response_token_ids"]
+                    reasoning_text = stage1_data.get("reasoning_text")
                     log_probs_1 = stage1_data["log_probs_1"]
 
                     # Compute model_2 log probabilities
                     _, log_probs_2 = compute_model_log_probs(
                         prompt=prompt,
-                        response_token_ids=response_token_ids,
+                        response_text=response_text,
                         model=model_2,
-                        tokenizer=tokenizer_2,  # Use same tokenizer for consistency
+                        tokenizer=tokenizer_2,
+                        reasoning_text=reasoning_text,
+                        thinking_token_start=thinking_token_start,
+                        thinking_token_end=thinking_token_end,
                     )
 
                     # Calculate KL divergence: KL(P||Q) = sum(P * log(P/Q))
@@ -326,16 +361,21 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
             response_texts = []
             for response_data in data_model2["responses"]:
                 response_text = response_data["choices"][0]["message"]["content"]
-                token_ids = tokenizer_1.encode(response_text, add_special_tokens=False)
+                reasoning_text = None
+                if include_reasoning:
+                    reasoning_text = response_data["choices"][0]["message"].get("reasoning")
 
                 try:
                     # KL(model_1 || model_2) using model 2's response
                     avg_kl, per_token_kls = calculate_kl_divergence_full_vocab(
                         prompt=prompt,
-                        response_token_ids=token_ids,
+                        response_text=response_text,
                         model_1=model_1,
                         tokenizer_1=tokenizer_1,
                         model_2=model_2,
+                        reasoning_text=reasoning_text,
+                        thinking_token_start=thinking_token_start,
+                        thinking_token_end=thinking_token_end,
                     )
                     response_texts.append(response_text)
                     response_kls_model2_avg.append(avg_kl)

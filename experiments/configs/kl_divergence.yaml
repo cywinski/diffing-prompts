@@ -1,22 +1,32 @@
 # Configuration for calculating KL divergence between two models
 # First model (base model) - P distribution
-model_1_name: "meta-llama/Llama-3.2-1B-Instruct"
+model_1_name: "unsloth/Llama-3.3-70B-Instruct-bnb-4bit"
 
 # Second model (fine-tuned/modified model) - Q distribution
-model_2_name: "meta-llama/Llama-3.2-3B-Instruct"
+model_2_name: "unsloth/DeepSeek-R1-Distill-Llama-70B-bnb-4bit"
 
 # Directory containing response files from model 2
 # These responses will be used to calculate KL divergence
-responses_dir_model2: "/workspace/projects/diffing-prompts/experiments/results/responses_openrouter/llama-3.2-3b-instruct"
+responses_dir_model2: "/Users/bcywinski/work/code/diffing-prompts/experiments/results/responses_openrouter/deepseek-r1-distill-llama-70b"
 
 # Output directory for KL divergence results
-output_dir: "/workspace/projects/diffing-prompts/experiments/results/kl_llama-3.2-3b-instruct"
+output_dir: "/workspace/projects/diffing-prompts/experiments/results/kl_llama-3.3-70b-instruct_distill"
 
 # Intermediate directory for two-stage processing
 # Used to save model_1 log probabilities when running stage1
 # If not specified, defaults to {output_dir}/intermediate
-intermediate_dir: "/workspace/projects/diffing-prompts/experiments/results/kl_llama-3.2-3b-instruct/intermediate"
+intermediate_dir: "/workspace/projects/diffing-prompts/experiments/results/kl_llama-3.3-70b-instruct_distill/intermediate"
 
 # Device mapping strategy for model loading
 # Options: "auto", "cuda:0", "cpu", etc.
 device_map: "auto"
+
+# Reasoning trace configuration
+# Set to true to include reasoning traces in KL divergence calculation
+# Reasoning will be extracted from the "reasoning" field in response JSON if present
+include_reasoning: true
+
+# Thinking tokens to wrap reasoning traces
+# Default values work for models like DeepSeek-R1
+thinking_token_start: "<think>"
+thinking_token_end: "</think>"

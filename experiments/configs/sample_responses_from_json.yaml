@@ -1,0 +1,33 @@
+# Configuration for sampling LLM responses from JSON prompts
+
+# Dataset configuration
+dataset:
+  json_path: "data/reasonIF_dataset.json"  # Path to JSON file containing prompts
+  prompt_field: "prompt"  # Field name containing the prompt text
+  num_prompts: null  # Number of prompts to sample (null = all)
+  min_length: null  # Minimum prompt length in characters
+  max_length: null  # Maximum prompt length in characters
+
+# API configuration
+api:
+  base_url: "https://openrouter.ai/api/v1"  # Optional API base URL override
+
+# Models to sample
+models:
+  - "openai/gpt-oss-20b"
+
+# Sampling parameters
+sampling:
+  num_samples_per_prompt: 5  # Number of samples to generate per prompt
+  max_tokens: 16384  # Maximum tokens to generate
+  temperature: 1.0  # Sampling temperature (0.0 = deterministic, 1.0 = creative)
+  top_p: 1.0  # Nucleus sampling parameter
+  logprobs: false  # Whether to return log probabilities
+  top_logprobs: 0  # Number of top logprobs to return per token (requires logprobs=true)
+  reasoning: true  # Whether to enable reasoning (for supported models)
+  max_retries: 5  # Maximum number of retry attempts for failed requests
+
+# Output configuration
+output:
+  base_dir: "experiments/results"  # Base directory for results
+  experiment_name: "reasonIF_sampling"  # Name of the experiment

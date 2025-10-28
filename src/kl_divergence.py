@@ -34,10 +34,13 @@ def load_model_and_tokenizer(model_name: str, device_map: str = "auto", attn_imp
 
 def calculate_kl_divergence_full_vocab(
     prompt: str,
-    response_token_ids: List[int],
+    response_text: str,
     model_1,
     tokenizer_1,
     model_2,
+    reasoning_text: str = None,
+    thinking_token_start: str = "<think>",
+    thinking_token_end: str = "</think>",
 ) -> Tuple[float, List[float]]:
     """Calculate KL divergence between two models' full vocabulary distributions.
 
@@ -45,14 +48,25 @@ def calculate_kl_divergence_full_vocab(
 
     Args:
         prompt: The input prompt text
-        response_token_ids: List of response token IDs
+        response_text: The response text (content)
         model_1: First model (P distribution)
         tokenizer_1: Tokenizer for first model
         model_2: Second model (Q distribution)
+        reasoning_text: Optional reasoning trace to include before response
+        thinking_token_start: Start token for reasoning (default: "<think>")
+        thinking_token_end: End token for reasoning (default: "</think>")
 
     Returns:
         Tuple of (average KL divergence per token, list of per-token KLs)
     """
+    # Format response with reasoning if provided
+    if reasoning_text is not None:
+        full_response_text = (
+            f"{thinking_token_start}{reasoning_text}{thinking_token_end}{response_text}"
+        )
+    else:
+        full_response_text = response_text
+
     # Prepare prompt with chat template
     user_prompt = tokenizer_1.apply_chat_template(
         [{"role": "user", "content": prompt}],
@@ -61,11 +75,18 @@ def calculate_kl_divergence_full_vocab(
         add_generation_prompt=True,
         add_bos=False,
     )
+    print(f"User prompt: {user_prompt}")
     user_prompt_tokens = tokenizer_1.encode(
         user_prompt,
         add_special_tokens=False,
         return_tensors="pt",
     )[0, :]
+
+    # Tokenize response
+    response_token_ids = tokenizer_1.encode(
+        full_response_text,
+        add_special_tokens=False,
+    )
 
     # Combine prompt and response tokens
     tokens = torch.cat([user_prompt_tokens, torch.tensor(response_token_ids)])
@@ -161,21 +182,35 @@ def calculate_kl_divergence_from_logprobs(
 
 def calculate_perplexity(
     prompt: str,
-    response_token_ids: List[int],
+    response_text: str,
     model,
     tokenizer,
+    reasoning_text: str = None,
+    thinking_token_start: str = "<think>",
+    thinking_token_end: str = "</think>",
 ) -> Tuple[float, List[float]]:
     """Calculate perplexity of a response using a given model.
 
     Args:
         prompt: The input prompt text
-        response_token_ids: List of response token IDs
+        response_text: The response text (content)
         model: Model to evaluate perplexity with
         tokenizer: Tokenizer for the model
+        reasoning_text: Optional reasoning trace to include before response
+        thinking_token_start: Start token for reasoning (default: "<think>")
+        thinking_token_end: End token for reasoning (default: "</think>")
 
     Returns:
         Tuple of (perplexity, list of per-token log probabilities)
     """
+    # Format response with reasoning if provided
+    if reasoning_text is not None:
+        full_response_text = (
+            f"{thinking_token_start}{reasoning_text}{thinking_token_end}{response_text}"
+        )
+    else:
+        full_response_text = response_text
+
     # Prepare prompt with chat template
     user_prompt = tokenizer.apply_chat_template(
         [{"role": "user", "content": prompt}],
@@ -189,6 +224,12 @@ def calculate_perplexity(
         add_special_tokens=False,
         return_tensors="pt",
     )[0, :]
+
+    # Tokenize response
+    response_token_ids = tokenizer.encode(
+        full_response_text,
+        add_special_tokens=False,
+    )
 
     # Combine prompt and response tokens
     tokens = torch.cat([user_prompt_tokens, torch.tensor(response_token_ids)])

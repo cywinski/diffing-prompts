@@ -6,7 +6,7 @@ dataset:
   source: "huggingface"           # Options: "huggingface", "file"
   dataset_name: "allenai/WildChat"  # HuggingFace dataset identifier
   split: "train"                  # Dataset split
-  num_prompts: 1000            # Number of prompts to sample
+  num_prompts: 100            # Number of prompts to sample
   seed: 42                        # Random seed for reproducibility
   sampling_mode: "random"          # How to sample prompts: "first" (take first N) or "random" (random N)
 
@@ -26,7 +26,7 @@ dataset:
 # Models to sample from (list of arbitrary length)
 # Model IDs from OpenRouter: https://openrouter.ai/models
 models:
-  - "meta-llama/llama-3.1-8b-instruct"
+  - "meta-llama/llama-3.3-70b-instruct"
   # - "deepseek/deepseek-chat"
   # - "cloud"
   # Add more models as needed:
@@ -38,8 +38,8 @@ api:
   base_url: "https://openrouter.ai/api/v1" # OpenRouter API base URL
 # Sampling parameters
 sampling:
-  num_samples_per_prompt: 10  # Number of samples per prompt per model
-  max_tokens: 1000            # Maximum tokens to generate
+  num_samples_per_prompt: 5  # Number of samples per prompt per model
+  max_tokens: 16384            # Maximum tokens to generate
   temperature: 1.0           # Sampling temperature
   top_p: 1.0                 # Nucleus sampling parameter
   logprobs: false            # Whether to return log probabilities
