@@ -100,19 +100,20 @@ def calculate_kl_divergence_full_vocab(
 
     # Combine prompt and response tokens
     tokens = torch.cat([user_prompt_tokens, torch.tensor(response_token_ids)])
-    tokens = tokens.to(model_1.device)
 
     # Get full vocabulary log probabilities from model 1
+    tokens_1 = tokens.to(model_1.device)
     with torch.no_grad():
-        outputs_1 = model_1(tokens.unsqueeze(0))
+        outputs_1 = model_1(tokens_1.unsqueeze(0))
         logits_1 = outputs_1.logits
         log_probs_1 = torch.log_softmax(logits_1, dim=-1)
         # Extract log probs for the response tokens
         log_probs_1 = log_probs_1[0, len(user_prompt_tokens) - 1 : -1].cpu()
 
     # Get full vocabulary log probabilities from model 2
+    tokens_2 = tokens.to(model_2.device)
     with torch.no_grad():
-        outputs_2 = model_2(tokens.unsqueeze(0))
+        outputs_2 = model_2(tokens_2.unsqueeze(0))
         logits_2 = outputs_2.logits
         log_probs_2 = torch.log_softmax(logits_2, dim=-1)
         # Extract log probs for the response tokens

@@ -20,8 +20,12 @@ output_dir: "/workspace/projects/diffing-prompts/experiments/results/kl/kl_llama
 intermediate_dir: "/workspace/projects/diffing-prompts/experiments/results/kl/kl_llama-3.3-70b_llama-3.1-70b/intermediate"
 
 # Device mapping strategy for model loading
-# Options: "auto", "cuda:0", "cpu", etc.
-device_map: "auto"
+# Options: "auto", "cuda:0", "cuda:1", "cpu", etc.
+# Can specify separate devices for each model using device_map_1 and device_map_2
+# Or use single device_map for both (backward compatibility)
+device_map_1: "cuda:0"  # Device for model_1
+device_map_2: "cuda:1"  # Device for model_2
+# device_map: "auto"  # Fallback: use same device map for both models
 
 # Reasoning trace configuration
 # Set to true to include reasoning traces in KL divergence calculation

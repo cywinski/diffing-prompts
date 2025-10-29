@@ -175,17 +175,24 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
     tokenizer_1_name = config.get("tokenizer_1_name", None)
     tokenizer_2_name = config.get("tokenizer_2_name", None)
 
+    # Get device maps (support separate devices for each model)
+    # Fall back to single device_map if separate ones not specified
+    device_map_1 = config.get("device_map_1", config.get("device_map", "auto"))
+    device_map_2 = config.get("device_map_2", config.get("device_map", "auto"))
+    print(f"Device map for model_1: {device_map_1}")
+    print(f"Device map for model_2: {device_map_2}")
+
     # Load models based on stage
     if stage in ["all", "stage1"]:
         model_1, tokenizer_1 = load_model_and_tokenizer(
-            config.model_1_name, config.device_map, tokenizer_name=tokenizer_1_name
+            config.model_1_name, device_map_1, tokenizer_name=tokenizer_1_name
         )
     else:
         model_1, tokenizer_1 = None, None
 
     if stage in ["all", "stage2"]:
         model_2, tokenizer_2 = load_model_and_tokenizer(
-            config.model_2_name, config.device_map, tokenizer_name=tokenizer_2_name
+            config.model_2_name, device_map_2, tokenizer_name=tokenizer_2_name
         )
     else:
         model_2, tokenizer_2 = None, None
@@ -356,6 +363,11 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
             )
             print(f"   {result['prompt'][:100]}...")
             print()
+
+        # remove intermediate files from intermediate_dir
+        for file in os.listdir(intermediate_dir):
+            os.remove(os.path.join(intermediate_dir, file))
+        print(f"Intermediate files removed from: {intermediate_dir}")
 
     else:  # stage == "all"
         # Original logic: Load both models and compute KL in one pass
