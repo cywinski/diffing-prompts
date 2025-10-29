@@ -14,21 +14,24 @@ from transformers import AutoTokenizer
 
 # %%
 # Parameters
-results_file = "/workspace/projects/diffing-prompts/experiments/results/kl_llama-3.2-1b-instruct/kl_divergence_results_sorted.json"
-tokenizer_name = "meta-llama/Llama-3.2-1B-Instruct"
+results_file1 = "/workspace/projects/diffing-prompts/experiments/results/kl/kl_llama-3.1-70b_llama-3.3-70b/kl_divergence_results_sorted.json"
+results_file2 = "/workspace/projects/diffing-prompts/experiments/results/kl/kl_llama-3.3-70b_llama-3.1-70b/kl_divergence_results_sorted.json"
+tokenizer_name = "unsloth/Llama-3.3-70B-Instruct-bnb-4bit"
 
 # %%
 # Load tokenizer (same one used for KL calculation)
 print(f"Loading tokenizer: {tokenizer_name}")
 tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, trust_remote_code=True)
-print("Tokenizer loaded successfully")
-
-# %%
+# # %%
 # Load results from saved file
-with open(results_file, "r") as f:
-    results = json.load(f)
+with open(results_file1, "r") as f:
+    results1 = json.load(f)
 
-print(f"Loaded {len(results)} results from: {results_file}")
+print(f"Loaded {len(results1)} results from: {results_file1}")
+with open(results_file2, "r") as f:
+    results2 = json.load(f)
+print(f"Loaded {len(results2)} results from: {results_file2}")
+
 
 # %%
 # Helper function to load response tokens from file
@@ -65,245 +68,285 @@ def load_response_tokens_from_file(response_file: str, response_idx: int = 0):
 # %%
 def visualize_response_with_kl(
     prompt: str,
-    response_tokens: list,
-    kl_per_token: list,
+    response_tokens_1: list,
+    kl_per_token_1: list,
+    response_tokens_2: list = None,
+    kl_per_token_2: list = None,
     title: str = "Response Tokens with KL Divergence",
-    cmap_name: str = "Reds",
-    figsize: tuple = (14, 5),
+    cmap_name_1: str = "Reds",
+    cmap_name_2: str = "Blues",
+    figsize: tuple = (14, 5.0),
     min_value: float = None,
     max_value: float = None,
 ):
-    """Visualize response tokens with background heatmap based on KL divergence.
+    """
+    Visualize response tokens with KL divergence as background colors.
+    Can display responses from two models for comparison.
+    Model 1 uses cmap_name_1 and Model 2 uses cmap_name_2.
 
     Args:
-        prompt: The input prompt text
-        response_tokens: List of response token strings
-        kl_per_token: List of KL divergence values per token
-        title: Plot title
-        cmap_name: Colormap name (single-color maps: 'Reds', 'Blues', 'Greens', 'Purples', 'Oranges')
-        figsize: Figure size (width, height)
-        min_value: Minimum value for the colormap (overrides KL values' min for color scaling if not None)
-        max_value: Maximum value for the colormap (overrides KL values' max for color scaling if not None)
+        prompt: The prompt text
+        response_tokens_1: List of lists, where each inner list contains tokens for a response from model 1
+        kl_per_token_1: List of lists, where each inner list contains KL values for a response from model 1
+        response_tokens_2: List of lists, where each inner list contains tokens for a response from model 2
+        kl_per_token_2: List of lists, where each inner list contains KL values for a response from model 2
+        title: Title for the visualization
+        cmap_name_1: Colormap name for model 1 responses
+        cmap_name_2: Colormap name for model 2 responses
+        figsize: Figure size tuple
+        min_value: Minimum value for colormap normalization
+        max_value: Maximum value for colormap normalization
     """
-    assert len(kl_per_token) == len(response_tokens)
-    fig, (ax_prompt, ax_response) = plt.subplots(
-        2, 1, figsize=figsize, gridspec_kw={"height_ratios": [0.4, 3], "hspace": 0.15}
+    import html
+    from matplotlib.colors import Normalize
+
+    # Decode HTML entities and ensure proper Unicode handling
+    def decode_text(text):
+        """Decode HTML entities and handle Unicode properly"""
+        if isinstance(text, str):
+            # Decode HTML entities
+            text = html.unescape(text)
+            # Handle any byte strings that might be encoded
+            try:
+                if isinstance(text, bytes):
+                    text = text.decode("utf-8")
+            except:
+                pass
+        return text
+
+    # Decode prompt
+    prompt = decode_text(prompt)
+
+    # Prepare all responses
+    all_responses = []
+
+    # Add model 1 responses
+    if isinstance(response_tokens_1[0], str):
+        # Single response case - wrap in list
+        decoded_tokens_1 = [decode_text(token) for token in response_tokens_1]
+        all_responses.append((decoded_tokens_1, kl_per_token_1, cmap_name_1))
+    else:
+        # Multiple responses case
+        for tokens, kls in zip(response_tokens_1, kl_per_token_1):
+            decoded_tokens = [decode_text(token) for token in tokens]
+            all_responses.append((decoded_tokens, kls, cmap_name_1))
+
+    # Add model 2 responses if provided
+    if response_tokens_2 is not None and kl_per_token_2 is not None:
+        if isinstance(response_tokens_2[0], str):
+            # Single response case - wrap in list
+            decoded_tokens_2 = [decode_text(token) for token in response_tokens_2]
+            all_responses.append((decoded_tokens_2, kl_per_token_2, cmap_name_2))
+        else:
+            # Multiple responses case
+            for tokens, kls in zip(response_tokens_2, kl_per_token_2):
+                decoded_tokens = [decode_text(token) for token in tokens]
+                all_responses.append((decoded_tokens, kls, cmap_name_2))
+
+    # Normalize KL values across all responses
+    all_kl_values = []
+    for _, kls, _ in all_responses:
+        if isinstance(kls[0], (int, float)):
+            all_kl_values.extend(kls)
+        else:
+            for kl_list in kls:
+                all_kl_values.extend(kl_list)
+
+    if min_value is None:
+        min_value = min(all_kl_values)
+    if max_value is None:
+        max_value = max(all_kl_values)
+
+    norm = Normalize(vmin=min_value, vmax=max_value)
+
+    # Dynamic figure sizing based on token count
+    max_tokens = max(len(tokens) for tokens, _, _ in all_responses)
+    tokens_per_line = 12
+    n_lines = max(5, (max_tokens // tokens_per_line) + 1)
+
+    # Add extra height for prompt display and multiple responses
+    prompt_lines = len(prompt) // 300 + 2
+    num_responses = len(all_responses)
+    dynamic_height = max(figsize[1], n_lines * 0.3 * num_responses + prompt_lines * 0.2)
+
+    fig, ax = plt.subplots(figsize=(figsize[0], dynamic_height))
+
+    # Configuration
+    line_width = figsize[0] * 0.95 / 8
+    char_width = 0.02
+    line_height = 0.3
+    x_margin = 0.1
+    y_start = dynamic_height - 1.0
+    padding = 0.02
+
+    # Display prompt at the top
+    prompt_y = y_start + 0.5
+    ax.text(
+        x_margin - 0.3,
+        prompt_y,
+        "Prompt:",
+        fontsize=11,
+        style="italic",
+        weight="bold",
+        verticalalignment="top",
     )
 
-    # Display prompt
-    ax_prompt.text(
-        0.05,
-        0.5,
-        f"Prompt: {prompt}",
-        fontsize=10,
-        verticalalignment="center",
-        wrap=True,
-    )
-    ax_prompt.axis("off")
-    ax_prompt.set_xlim(0, 1)
-    ax_prompt.set_ylim(0, 1)
-    ax_prompt.margins(0)
+    # Wrap and display prompt text
+    prompt_text = prompt.replace("\n", " ")
+    max_chars_per_line = 140
+    prompt_lines_list = []
+    for i in range(0, len(prompt_text), max_chars_per_line):
+        prompt_lines_list.append(prompt_text[i : i + max_chars_per_line])
 
-    # Prepare response visualization
-    ax_response.axis("off")
-    ax_response.set_xlim(0, 1)
-    ax_response.set_ylim(0, 1)
-
-    # Normalize KL values for colormap
-    kl_array = np.array(kl_per_token)
-    vmin = min_value if min_value is not None else kl_array.min()
-    vmax = max_value if max_value is not None else kl_array.max()
-    norm = plt.Normalize(vmin=vmin, vmax=vmax)
-    cmap = plt.cm.get_cmap(cmap_name)
-
-    # Layout parameters
-    x_pos = 0.02
-    y_pos = 0.93
-    line_height = 0.065
-    max_width = 0.96
-
-    # Draw tokens with colored backgrounds
-    for token, kl_val in zip(response_tokens, kl_per_token):
-        # Estimate token width (rough approximation)
-        token_width = len(token) * 0.012
-
-        # Check if we need to wrap to next line
-        if x_pos + token_width > max_width:
-            x_pos = 0.02
-            y_pos -= line_height
-
-        # Get color for this KL value
-        color = cmap(norm(kl_val))
-
-        # Draw background rectangle
-        rect = mpatches.Rectangle(
-            (x_pos, y_pos - 0.05),
-            token_width,
-            0.06,
-            facecolor=color,
-            edgecolor="none",
-            transform=ax_response.transAxes,
+    current_prompt_y = prompt_y - 0.35
+    for line in prompt_lines_list:
+        ax.text(
+            x_margin,
+            current_prompt_y,
+            line,
+            fontsize=10,
+            verticalalignment="top",
+            fontfamily="sans-serif",
+            color="#333333",
+            wrap=True,
         )
-        ax_response.add_patch(rect)
+        current_prompt_y -= 0.3
 
-        # Draw token text
-        ax_response.text(
-            x_pos + token_width / 2,
-            y_pos - 0.02,
-            token.replace("\n", "\\n"),
-            fontsize=9,
-            verticalalignment="center",
-            horizontalalignment="center",
-            family="monospace",
-        )
+    # Add separator after prompt
+    separator_y = current_prompt_y - 0.1
+    ax.axhline(y=separator_y, color="gray", linewidth=1, linestyle="-", alpha=0.5)
 
-        x_pos += token_width + 0.005
+    # Start tokens below the prompt
+    current_y = separator_y - 0.5
 
-    # Add colorbar
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    # Render each response
+    for response_idx, (tokens, kls, response_cmap_name) in enumerate(all_responses):
+        cmap = plt.get_cmap(response_cmap_name)
+        current_x = x_margin
+
+        for i, (token, kl_value) in enumerate(zip(tokens, kls)):
+            # Clean token for display
+            display_token = token.replace("\t", "\\t")
+            # Keep actual newlines as \n for display
+            if "\n" in display_token:
+                display_token = display_token.replace("\n", "\\n")
+
+            token_width = len(display_token) * char_width
+
+            # Check if we need to wrap to next line
+            if current_x + token_width > line_width and current_x > x_margin:
+                current_y -= line_height
+                current_x = x_margin
+
+            # Get color based on KL value
+            color = cmap(norm(kl_value))
+
+            # Draw background rectangle
+            rect = mpatches.FancyBboxPatch(
+                (current_x, current_y - 0.05),
+                token_width + 2 * padding,
+                line_height * 0.85,
+                boxstyle="round,pad=0.02",
+                facecolor=color,
+                edgecolor="none",
+                alpha=0.9,
+            )
+            ax.add_patch(rect)
+
+            # Draw token text (centered in the padded box)
+            text_color = "black" if norm(kl_value) < 0.5 else "white"
+            ax.text(
+                current_x + padding,
+                current_y + line_height * 0.25,
+                display_token,
+                fontsize=11,
+                verticalalignment="center",
+                fontfamily="monospace",
+                color=text_color,
+                weight="normal",
+            )
+
+            # Move to next position
+            current_x += token_width + 2 * padding + 0.05
+
+        # Add spacing between responses
+        if response_idx < len(all_responses) - 1:
+            current_y -= line_height * 1.5
+
+    # Add single colorbar
+    sm = plt.cm.ScalarMappable(cmap=plt.get_cmap(cmap_name_1), norm=norm)
     sm.set_array([])
     cbar = plt.colorbar(
-        sm, ax=ax_response, orientation="horizontal", pad=0.01, fraction=0.04, aspect=50
+        sm, ax=ax, orientation="horizontal", pad=0.05, aspect=40, shrink=0.8
     )
-    cbar.set_label("KL Divergence per Token", fontsize=9)
+    cbar.set_label("KL Divergence per Token", fontsize=11, weight="bold")
+    cbar.ax.tick_params(labelsize=10)
 
-    plt.suptitle(title, fontsize=12, fontweight="bold", y=0.98)
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    # Set title
+    ax.set_title(title, fontsize=14, weight="bold", pad=15)
 
+    # Configure axes
+    ax.set_xlim(0, line_width + x_margin)
+    ax.set_ylim(current_y - 1, prompt_y + 0.5)
+    ax.axis("off")
+
+    plt.tight_layout()
     return fig
 
 
 # %%
-# Print summary statistics
-print(f"\nSummary Statistics:")
-print(f"Total prompts: {len(results)}")
-kl_values = [r["average_kl"] for r in results]
-print(f"Average KL: {np.mean(kl_values):.6f}")
-print(f"Median KL: {np.median(kl_values):.6f}")
-print(f"Min KL: {np.min(kl_values):.6f}")
-print(f"Max KL: {np.max(kl_values):.6f}")
+ind = 0
+display_num = 1
+top_result = results1[ind]
+prompt_idx = top_result["prompt_idx"]
+# search for prompt_idx in results2
+for result in results2:
+    if result["prompt_idx"] == prompt_idx:
+        top_result_2 = result
+        break
+num_responses = len(top_result["response_kls_model2_per_token"])
+# Sort response indices by average KL (descending)
+sorted_indices = sorted(
+    range(num_responses),
+    key=lambda idx: top_result["response_kls_model2_avg"][idx],
+    reverse=True,
+)
 
-# %%
-# Distribution of KL per token values
-kl_per_token_values = [
-    y for x in results[:100] for y in x["response_kls_model2_per_token"]
-]
-plt.figure(figsize=(10, 6))
-plt.hist(kl_per_token_values, bins=50, alpha=0.7, edgecolor="black")
-plt.xlabel("KL Divergence per Token", fontsize=14)
-plt.ylabel("Frequency", fontsize=14)
-plt.title("Distribution of KL Divergence per Token Values")
-plt.grid(True, alpha=0.3)
-plt.show()
+# Collect all responses from both models
+response_tokens_list = []
+kl_per_token_list = []
+for response_idx in range(display_num):
+    response_tokens = load_response_tokens_from_file(
+        top_result["file_model2"], response_idx
+    )
+    response_tokens_list.append(response_tokens)
+    kl_per_token_list.append(top_result["response_kls_model2_per_token"][response_idx])
 
-# %%
-# Plot: Response length vs KL divergence
-responses_len = [len(y) for x in results for y in x["response_kls_model2_per_token"]]
-kls = [y for x in results for y in x["response_kls_model2_avg"]]
-
-plt.figure(figsize=(10, 6))
-plt.scatter(responses_len, kls, alpha=0.5)
-plt.xlabel("Length of response", fontsize=18)
-plt.ylabel("KL", fontsize=16)
-plt.grid(True, alpha=0.3)
-plt.title("KL Divergence vs Response Length")
-plt.show()
-
-# %%
-# Plot: Distribution of KL values
-plt.figure(figsize=(10, 6))
-plt.hist(kl_values, bins=50, alpha=0.7, edgecolor="black")
-plt.xlabel("KL Divergence", fontsize=14)
-plt.ylabel("Frequency", fontsize=14)
-plt.title("Distribution of KL Divergence Values")
-plt.grid(True, alpha=0.3)
-plt.show()
-
-# %%
-# Print top 10 prompts with highest KL
-print("\nTop 10 prompts with highest KL divergence:")
-print("-" * 80)
-for i, result in enumerate(results[:10], 1):
-    print(f"{i:2d}. Prompt {result['prompt_idx']}: {result['average_kl']:.6f}")
-    print(f"    {result['prompt'][:100]}...")
-    print()
-
-# %%
-ind = 400
-visualize_n = 3
-# Visualize all responses for the selected prompt, sorted by average KL divergence
-if len(results) > 0:
-    top_result = results[ind]
-    num_responses = len(top_result["response_kls_model2_per_token"])
-
-    # Sort response indices by average KL (descending)
-    sorted_indices = sorted(
-        range(num_responses),
-        key=lambda idx: top_result["response_kls_model2_avg"][idx],
-        reverse=True,
+for response_idx in range(display_num):
+    response_tokens2 = load_response_tokens_from_file(
+        top_result_2["file_model2"], response_idx
+    )
+    response_tokens_list.append(response_tokens2)
+    kl_per_token_list.append(
+        top_result_2["response_kls_model2_per_token"][response_idx]
     )
 
-    for rank, response_idx in enumerate(sorted_indices[:visualize_n], 1):
-        response_tokens = load_response_tokens_from_file(
-            top_result["file_model2"], response_idx
-        )
-
-        fig = visualize_response_with_kl(
-            prompt=top_result["prompt"],
-            response_tokens=response_tokens,
-            kl_per_token=top_result["response_kls_model2_per_token"][response_idx],
-            title=(
-                f"Prompt {top_result['prompt_idx']} - Response {response_idx} "
-                f"(Sorted Rank: {rank}, Avg KL: {top_result['response_kls_model2_avg'][response_idx]:.4f})"
-            ),
-            cmap_name="Reds",
-            min_value=0,
-            max_value=10,
-        )
-        plt.show()
-
-
-# %%
-# Calculate average KL per token across all results
-token_kl_values = defaultdict(list)
-
-print("\nAggregating KL values per token across all results...")
-for result in tqdm(results, desc="Processing results"):
-    # Load response tokens from file for each response
-    for response_idx in range(len(result["response_kls_model2_per_token"])):
-        response_tokens = load_response_tokens_from_file(
-            result["file_model2"], response_idx
-        )
-        kl_values = result["response_kls_model2_per_token"][response_idx]
-
-        # Aggregate KL values by token
-        for token, kl in zip(response_tokens, kl_values):
-            token_kl_values[token].append(kl)
-
-print(f"Found {len(token_kl_values)} unique tokens across all responses")
-
-# %%
-# Calculate average KL per token
-token_avg_kl = {}
-for token, kl_list in tqdm(token_kl_values.items(), desc="Calculating averages"):
-    token_avg_kl[token] = sum(kl_list) / len(kl_list)
-
-# Sort by average KL (highest first)
-sorted_tokens = sorted(token_avg_kl.items(), key=lambda x: x[1], reverse=True)
-
-# %%
-# Print top 30 tokens with highest average KL (filtered by minimum count)
-min_count = 10
-print(f"\nTop 30 tokens with highest average KL divergence (min count: {min_count}):")
-print("-" * 60)
-filtered_tokens = [
-    (token, avg_kl)
-    for token, avg_kl in sorted_tokens
-    if len(token_kl_values[token]) >= min_count
-]
-for i, (token, avg_kl) in enumerate(filtered_tokens[:30], 1):
-    token_repr = repr(token)
-    count = len(token_kl_values[token])
-    print(f"{i:2d}. {token_repr:20s} | Avg KL: {avg_kl:.6f} | Count: {count}")
+# Visualize all responses at once
+model_1_name = "Llama-3.3-70B"
+model_2_name = "Llama-3.1-70B"
+fig = visualize_response_with_kl(
+    prompt=top_result["prompt"],
+    response_tokens_1=response_tokens_list[:display_num],
+    kl_per_token_1=kl_per_token_list[:display_num],
+    response_tokens_2=response_tokens_list[display_num:],
+    kl_per_token_2=kl_per_token_list[display_num:],
+    title=(
+        f"Prompt {top_result['prompt_idx']} Average KL: {top_result['response_kls_model2_avg'][0]:.4f} (Red: {model_1_name}, Blue: {model_2_name})"
+    ),
+    cmap_name_1="Reds",
+    cmap_name_2="Blues",
+    min_value=0,
+)
+plt.show()
 
 # %%

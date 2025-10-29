@@ -10,18 +10,27 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
-def load_model_and_tokenizer(model_name: str, device_map: str = "auto", attn_implementation: str = "eager"):
+def load_model_and_tokenizer(
+    model_name: str,
+    device_map: str = "auto",
+    attn_implementation: str = "eager",
+    tokenizer_name: str = None,
+):
     """Load a model and its tokenizer.
 
     Args:
         model_name: HuggingFace model name or path
         device_map: Device mapping strategy (default: "auto")
+        attn_implementation: Attention implementation (default: "eager")
+        tokenizer_name: Optional tokenizer name (default: use model_name)
 
     Returns:
         Tuple of (model, tokenizer)
     """
     print(f"Loading model: {model_name}")
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    tokenizer_to_load = tokenizer_name if tokenizer_name is not None else model_name
+    print(f"Loading tokenizer: {tokenizer_to_load}")
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_to_load, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         dtype=torch.bfloat16,
@@ -41,7 +50,7 @@ def calculate_kl_divergence_full_vocab(
     reasoning_text: str = None,
     thinking_token_start: str = "<think>",
     thinking_token_end: str = "</think>",
-) -> Tuple[float, List[float]]:
+) -> Tuple[float, List[float], List[float], List[float]]:
     """Calculate KL divergence between two models' full vocabulary distributions.
 
     Calculates KL divergence for responses: KL(model_1 || model_2)
@@ -57,7 +66,8 @@ def calculate_kl_divergence_full_vocab(
         thinking_token_end: End token for reasoning (default: "</think>")
 
     Returns:
-        Tuple of (average KL divergence per token, list of per-token KLs)
+        Tuple of (average KL divergence per token, list of per-token KLs,
+                  list of per-token entropies for model_1, list of per-token entropies for model_2,
     """
     # Format response with reasoning if provided
     if reasoning_text is not None:
@@ -108,6 +118,15 @@ def calculate_kl_divergence_full_vocab(
         # Extract log probs for the response tokens
         log_probs_2 = log_probs_2[0, len(user_prompt_tokens) - 1 : -1].cpu()
 
+    kl_per_token = calculate_kl_score_per_token(log_probs_1, log_probs_2)
+
+    # Average over tokens
+    avg_kl = kl_per_token.mean().item()
+
+    return (avg_kl, kl_per_token.tolist())
+
+
+def calculate_kl_score_per_token(log_probs_1, log_probs_2):
     # Calculate KL divergence: KL(P||Q) = sum(P * log(P/Q))
     # In log space: KL(P||Q) = sum(exp(log_P) * (log_P - log_Q))
     # Using PyTorch's kl_div: expects input=log(Q), target=log(P)
@@ -118,11 +137,7 @@ def calculate_kl_divergence_full_vocab(
         reduction="none",
         log_target=True,
     ).sum(dim=-1)  # Sum over vocabulary dimension
-
-    # Average over tokens
-    avg_kl = kl_per_token.mean().item()
-
-    return avg_kl, kl_per_token.tolist()
+    return kl_per_token
 
 
 def calculate_kl_divergence_from_logprobs(
@@ -244,11 +259,17 @@ def calculate_perplexity(
         # Vectorized extraction of log probs for the response tokens
         # Calculate position indices for response tokens in the full sequence
         start_pos = len(user_prompt_tokens) - 1
-        pos_indices = torch.arange(start_pos, start_pos + len(response_token_ids), device=tokens.device)
-        response_token_ids_tensor = torch.tensor(response_token_ids, device=tokens.device)
+        pos_indices = torch.arange(
+            start_pos, start_pos + len(response_token_ids), device=tokens.device
+        )
+        response_token_ids_tensor = torch.tensor(
+            response_token_ids, device=tokens.device
+        )
 
         # log_probs[0, pos_indices, response_token_ids_tensor] -> log prob at each token position
-        response_log_probs = log_probs[0, pos_indices, response_token_ids_tensor].tolist()
+        response_log_probs = log_probs[
+            0, pos_indices, response_token_ids_tensor
+        ].tolist()
 
     # Calculate perplexity: exp(-mean(log_probs))
     mean_log_prob = sum(response_log_probs) / len(response_log_probs)
@@ -261,9 +282,9 @@ def get_prompt_index(filepath: str) -> int:
     """Extract prompt index from filename like 'model_prompt_123.json'"""
     basename = os.path.basename(filepath)
     # Find the last occurrence of 'prompt_' and extract number
-    parts = basename.split('prompt_')
+    parts = basename.split("prompt_")
     if len(parts) > 1:
-        idx = parts[-1].split('.')[0]
+        idx = parts[-1].split(".")[0]
         try:
             return int(idx)
         except ValueError:

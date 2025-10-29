@@ -1,21 +1,23 @@
 # Configuration for calculating KL divergence between two models
 # First model (base model) - P distribution
-model_1_name: "unsloth/Llama-3.3-70B-Instruct-bnb-4bit"
+model_2_name: "unsloth/Meta-Llama-3.1-70B-Instruct-bnb-4bit"
 
 # Second model (fine-tuned/modified model) - Q distribution
-model_2_name: "unsloth/DeepSeek-R1-Distill-Llama-70B-bnb-4bit"
+model_1_name: "unsloth/Llama-3.3-70B-Instruct-bnb-4bit"
+tokenizer_1_name: "unsloth/Llama-3.3-70B-Instruct-bnb-4bit"
+tokenizer_2_name: "unsloth/Llama-3.3-70B-Instruct-bnb-4bit"
 
 # Directory containing response files from model 2
 # These responses will be used to calculate KL divergence
-responses_dir_model2: "/Users/bcywinski/work/code/diffing-prompts/experiments/results/responses_openrouter/deepseek-r1-distill-llama-70b"
+responses_dir_model2: "/workspace/projects/diffing-prompts/experiments/results/openrouter_samples/llama-3.3-70b"
 
 # Output directory for KL divergence results
-output_dir: "/workspace/projects/diffing-prompts/experiments/results/kl_llama-3.3-70b-instruct_distill"
+output_dir: "/workspace/projects/diffing-prompts/experiments/results/kl/kl_llama-3.3-70b_llama-3.1-70b"
 
 # Intermediate directory for two-stage processing
 # Used to save model_1 log probabilities when running stage1
 # If not specified, defaults to {output_dir}/intermediate
-intermediate_dir: "/workspace/projects/diffing-prompts/experiments/results/kl_llama-3.3-70b-instruct_distill/intermediate"
+intermediate_dir: "/workspace/projects/diffing-prompts/experiments/results/kl/kl_llama-3.3-70b_llama-3.1-70b/intermediate"
 
 # Device mapping strategy for model loading
 # Options: "auto", "cuda:0", "cpu", etc.
@@ -24,7 +26,7 @@ device_map: "auto"
 # Reasoning trace configuration
 # Set to true to include reasoning traces in KL divergence calculation
 # Reasoning will be extracted from the "reasoning" field in response JSON if present
-include_reasoning: true
+include_reasoning: false
 
 # Thinking tokens to wrap reasoning traces
 # Default values work for models like DeepSeek-R1

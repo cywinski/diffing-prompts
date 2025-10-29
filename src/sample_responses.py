@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from openrouter_client import OpenRouterClient
 from prompts_loader import (
     PromptLoader,
+    gpqa_prompt_extractor,
     wildchat_language_filter,
     wildchat_prompt_extractor,
 )
@@ -63,11 +64,11 @@ async def sample_responses_for_model(
         reasoning: Whether to enable reasoning.
         max_retries: Maximum number of retry attempts for failed requests.
     """
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Sampling responses for model: {model}")
     print(f"Number of prompts: {len(prompts)}")
     print(f"Samples per prompt: {num_samples}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     client = OpenRouterClient(api_key=api_key, base_url=base_url)
 
@@ -129,11 +130,15 @@ async def main():
         prompt_extractor = None
         if dataset_config.get("use_wildchat_format"):
             prompt_extractor = wildchat_prompt_extractor
+        elif dataset_config.get("use_gpqa_format"):
+            prompt_extractor = gpqa_prompt_extractor
 
         prompts = PromptLoader.load_from_huggingface(
             dataset_name=dataset_config["dataset_name"],
             split=dataset_config["split"],
-            prompt_field=dataset_config.get("prompt_field") if not prompt_extractor else None,
+            prompt_field=dataset_config.get("prompt_field")
+            if not prompt_extractor
+            else None,
             num_samples=dataset_config.get("num_prompts"),
             seed=dataset_config.get("seed"),
             min_length=dataset_config.get("min_length"),
@@ -161,7 +166,9 @@ async def main():
     if args.output_dir:
         output_dir = Path(args.output_dir)
     else:
-        output_dir = Path(config["output"]["base_dir"]) / config['output']['experiment_name']
+        output_dir = (
+            Path(config["output"]["base_dir"]) / config["output"]["experiment_name"]
+        )
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -191,16 +198,16 @@ async def main():
         tasks.append(task)
 
     # Run all model sampling concurrently
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Sampling {len(models)} models concurrently...")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     await asyncio.gather(*tasks)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("✓ All sampling complete!")
     print(f"Results saved to: {output_dir}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
 
 if __name__ == "__main__":

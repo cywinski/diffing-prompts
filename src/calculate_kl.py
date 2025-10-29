@@ -7,6 +7,7 @@ from typing import Optional
 
 import fire
 import torch
+import transformers
 from dotenv import load_dotenv
 from omegaconf import OmegaConf
 from tqdm import tqdm
@@ -22,11 +23,7 @@ def save_stage1_intermediate(
     intermediate_dir: str,
     prompt_idx: int,
     response_idx: int,
-    prompt: str,
-    response_text: str,
-    user_prompt_tokens: list,
     log_probs_1: torch.Tensor,
-    reasoning_text: str = None,
 ):
     """Save intermediate results from stage 1 (model_1 log probabilities).
 
@@ -34,22 +31,19 @@ def save_stage1_intermediate(
         intermediate_dir: Directory to save intermediate results
         prompt_idx: Index of the prompt
         response_idx: Index of the response
-        prompt: The prompt text
-        response_text: The response text
-        user_prompt_tokens: List of user prompt token IDs
         log_probs_1: Log probabilities from model_1 [num_tokens, vocab_size]
-        reasoning_text: Optional reasoning trace
+
+    Note:
+        Text data (prompt, response, reasoning) is not saved to reduce file size.
+        It can be reloaded from JSON files in stage 2.
+        Log probabilities are saved in float16 precision to reduce file size.
     """
     os.makedirs(intermediate_dir, exist_ok=True)
 
     data = {
         "prompt_idx": prompt_idx,
         "response_idx": response_idx,
-        "prompt": prompt,
-        "response_text": response_text,
-        "reasoning_text": reasoning_text,
-        "user_prompt_tokens": user_prompt_tokens,
-        "log_probs_1": log_probs_1,  # Keep as tensor
+        "log_probs_1": log_probs_1.half(),  # Convert to float16
     }
 
     filename = f"stage1_prompt_{prompt_idx}_response_{response_idx}.pt"
@@ -67,7 +61,11 @@ def load_stage1_intermediate(intermediate_dir: str, prompt_idx: int, response_id
         response_idx: Index of the response
 
     Returns:
-        Dictionary containing stage 1 data
+        Dictionary containing stage 1 data (prompt_idx, response_idx, log_probs_1)
+
+    Note:
+        Text data is not included - load from JSON files separately.
+        Log probabilities are stored in float16 and should be converted back if needed.
     """
     filename = f"stage1_prompt_{prompt_idx}_response_{response_idx}.pt"
     filepath = os.path.join(intermediate_dir, filename)
@@ -81,7 +79,7 @@ def compute_model_log_probs(
     prompt: str,
     response_text: str,
     model,
-    tokenizer,
+    tokenizer: transformers.PreTrainedTokenizerFast,
     reasoning_text: str = None,
     thinking_token_start: str = "<think>",
     thinking_token_end: str = "</think>",
@@ -102,7 +100,7 @@ def compute_model_log_probs(
     """
     # Format response with reasoning if provided
     if reasoning_text is not None:
-        full_response_text = f"{thinking_token_start}{reasoning_text}{thinking_token_end}{response_text}"
+        full_response_text = f"{reasoning_text}{thinking_token_end}{response_text}"
     else:
         full_response_text = response_text
 
@@ -129,7 +127,6 @@ def compute_model_log_probs(
     # Combine prompt and response tokens
     tokens = torch.cat([user_prompt_tokens, torch.tensor(response_token_ids)])
     tokens = tokens.to(model.device)
-
     # Get full vocabulary log probabilities
     with torch.no_grad():
         outputs = model(tokens.unsqueeze(0))
@@ -150,7 +147,9 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
         stage: Execution stage - "all" (default), "stage1" (only model_1), or "stage2" (only model_2)
     """
     if stage not in ["all", "stage1", "stage2"]:
-        raise ValueError(f"Invalid stage: {stage}. Must be 'all', 'stage1', or 'stage2'")
+        raise ValueError(
+            f"Invalid stage: {stage}. Must be 'all', 'stage1', or 'stage2'"
+        )
     load_dotenv()
 
     # Load configuration
@@ -163,24 +162,30 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
     os.makedirs(config.output_dir, exist_ok=True)
 
     # Set intermediate directory (used for stage1 and stage2)
-    intermediate_dir = config.get("intermediate_dir", os.path.join(config.output_dir, "intermediate"))
+    intermediate_dir = config.get(
+        "intermediate_dir", os.path.join(config.output_dir, "intermediate")
+    )
 
     # Get reasoning config
     include_reasoning = config.get("include_reasoning", False)
     thinking_token_start = config.get("thinking_token_start", "<think>")
     thinking_token_end = config.get("thinking_token_end", "</think>")
 
+    # Get tokenizer names (default to model names if not specified)
+    tokenizer_1_name = config.get("tokenizer_1_name", None)
+    tokenizer_2_name = config.get("tokenizer_2_name", None)
+
     # Load models based on stage
     if stage in ["all", "stage1"]:
         model_1, tokenizer_1 = load_model_and_tokenizer(
-            config.model_1_name, config.device_map
+            config.model_1_name, config.device_map, tokenizer_name=tokenizer_1_name
         )
     else:
         model_1, tokenizer_1 = None, None
 
     if stage in ["all", "stage2"]:
         model_2, tokenizer_2 = load_model_and_tokenizer(
-            config.model_2_name, config.device_map
+            config.model_2_name, config.device_map, tokenizer_name=tokenizer_2_name
         )
     else:
         model_2, tokenizer_2 = None, None
@@ -212,10 +217,12 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
                 response_text = response_data["choices"][0]["message"]["content"]
                 reasoning_text = None
                 if include_reasoning:
-                    reasoning_text = response_data["choices"][0]["message"].get("reasoning")
+                    reasoning_text = response_data["choices"][0]["message"].get(
+                        "reasoning"
+                    )
 
                 try:
-                    user_prompt_tokens, log_probs_1 = compute_model_log_probs(
+                    _, log_probs_1 = compute_model_log_probs(
                         prompt=prompt,
                         response_text=response_text,
                         model=model_1,
@@ -229,14 +236,12 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
                         intermediate_dir=intermediate_dir,
                         prompt_idx=prompt_idx,
                         response_idx=response_idx,
-                        prompt=prompt,
-                        response_text=response_text,
-                        user_prompt_tokens=user_prompt_tokens,
                         log_probs_1=log_probs_1,
-                        reasoning_text=reasoning_text,
                     )
                 except Exception as e:
-                    print(f"Error processing prompt {prompt_idx}, response {response_idx}: {e}")
+                    print(
+                        f"Error processing prompt {prompt_idx}, response {response_idx}: {e}"
+                    )
                     continue
 
         print(f"\nStage 1 complete. Intermediate results saved to: {intermediate_dir}")
@@ -260,16 +265,23 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
             response_kls_model2_per_token = []
             response_texts = []
 
-            for response_idx in range(len(data_model2["responses"])):
+            prompt = data_model2["prompt"]
+
+            for response_idx, response_data in enumerate(data_model2["responses"]):
                 try:
                     # Load stage 1 intermediate data
                     stage1_data = load_stage1_intermediate(
                         intermediate_dir, prompt_idx, response_idx
                     )
 
-                    prompt = stage1_data["prompt"]
-                    response_text = stage1_data["response_text"]
-                    reasoning_text = stage1_data.get("reasoning_text")
+                    # Load text data from JSON (not saved in stage1 to reduce file size)
+                    response_text = response_data["choices"][0]["message"]["content"]
+                    reasoning_text = None
+                    if include_reasoning:
+                        reasoning_text = response_data["choices"][0]["message"].get(
+                            "reasoning"
+                        )
+
                     log_probs_1 = stage1_data["log_probs_1"]
 
                     # Compute model_2 log probabilities
@@ -290,7 +302,6 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
                         reduction="none",
                         log_target=True,
                     ).sum(dim=-1)
-
                     response_texts.append(response_text)
 
                     avg_kl = kl_per_token.mean().item()
@@ -299,7 +310,9 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
                     response_kls_model2_per_token.append(kl_per_token.tolist())
 
                 except Exception as e:
-                    print(f"Error processing prompt {prompt_idx}, response {response_idx}: {e}")
+                    print(
+                        f"Error processing prompt {prompt_idx}, response {response_idx}: {e}"
+                    )
                     continue
 
             if len(response_kls_model2_avg) == 0:
@@ -325,7 +338,9 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
         results.sort(key=lambda x: x["average_kl"], reverse=True)
         print(f"\nSorted {len(results)} results by average KL divergence")
 
-        output_file = os.path.join(config.output_dir, "kl_divergence_results_sorted.json")
+        output_file = os.path.join(
+            config.output_dir, "kl_divergence_results_sorted.json"
+        )
         with open(output_file, "w") as f:
             json.dump(results, f, indent=2)
 
@@ -336,7 +351,9 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
         print("\nTop 5 prompts with highest KL divergence:")
         print("-" * 80)
         for i, result in enumerate(results[:5], 1):
-            print(f"{i}. Prompt {result['prompt_idx']}: {result['average_kl']:.6f}")
+            print(
+                f"{i}. Prompt {result['prompt_idx']}: KL={result['average_kl']:.6f}, "
+            )
             print(f"   {result['prompt'][:100]}...")
             print()
 
@@ -363,11 +380,16 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
                 response_text = response_data["choices"][0]["message"]["content"]
                 reasoning_text = None
                 if include_reasoning:
-                    reasoning_text = response_data["choices"][0]["message"].get("reasoning")
+                    reasoning_text = response_data["choices"][0]["message"].get(
+                        "reasoning"
+                    )
 
                 try:
                     # KL(model_1 || model_2) using model 2's response
-                    avg_kl, per_token_kls = calculate_kl_divergence_full_vocab(
+                    (
+                        avg_kl,
+                        per_token_kls,
+                    ) = calculate_kl_divergence_full_vocab(
                         prompt=prompt,
                         response_text=response_text,
                         model_1=model_1,
@@ -408,7 +430,9 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
         print(f"\nSorted {len(results)} results by average KL divergence")
 
         # Save results to JSON file
-        output_file = os.path.join(config.output_dir, "kl_divergence_results_sorted.json")
+        output_file = os.path.join(
+            config.output_dir, "kl_divergence_results_sorted.json"
+        )
         with open(output_file, "w") as f:
             json.dump(results, f, indent=2)
 
@@ -419,7 +443,9 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
         print("\nTop 5 prompts with highest KL divergence:")
         print("-" * 80)
         for i, result in enumerate(results[:5], 1):
-            print(f"{i}. Prompt {result['prompt_idx']}: {result['average_kl']:.6f}")
+            print(
+                f"{i}. Prompt {result['prompt_idx']}: KL={result['average_kl']:.6f}, "
+            )
             print(f"   {result['prompt'][:100]}...")
             print()
 

@@ -50,7 +50,9 @@ class PromptLoader:
             print(f"Shuffling dataset with seed {seed}...")
             dataset = dataset.shuffle(seed=seed)
         elif sampling_mode == "random" and seed is None:
-            print("Warning: 'random' sampling mode without seed - results may not be reproducible")
+            print(
+                "Warning: 'random' sampling mode without seed - results may not be reproducible"
+            )
 
         prompts = []
         for item in dataset:
@@ -122,7 +124,8 @@ class PromptLoader:
         if min_length or max_length:
             original_count = len(prompts)
             prompts = [
-                p for p in prompts
+                p
+                for p in prompts
                 if (not min_length or len(p) >= min_length)
                 and (not max_length or len(p) <= max_length)
             ]
@@ -140,7 +143,9 @@ class PromptLoader:
                 if seed is not None:
                     random.seed(seed)
                 else:
-                    print("Warning: 'random' sampling mode without seed - results may not be reproducible")
+                    print(
+                        "Warning: 'random' sampling mode without seed - results may not be reproducible"
+                    )
                 prompts = random.sample(prompts, num_samples)
                 print(f"Randomly sampled {num_samples} prompts")
 
@@ -175,7 +180,9 @@ class PromptLoader:
                 if seed is not None:
                     random.seed(seed)
                 else:
-                    print("Warning: 'random' sampling mode without seed - results may not be reproducible")
+                    print(
+                        "Warning: 'random' sampling mode without seed - results may not be reproducible"
+                    )
                 prompts = random.sample(prompts, num_samples)
                 print(f"Randomly sampled {num_samples} prompts")
 
@@ -213,6 +220,32 @@ def wildchat_language_filter(language: str) -> Callable[[Dict[str, Any]], bool]:
     Returns:
         Filter function that returns True if item matches language.
     """
+
     def filter_fn(item: Dict[str, Any]) -> bool:
         return item.get("language") == language and item.get("turn") == 1
+
     return filter_fn
+
+
+def gpqa_prompt_extractor(item: Dict[str, Any]) -> str:
+    """Extract question from GPQA dataset and add answer tag instruction.
+
+    Args:
+        item: GPQA dataset item containing 'question' field.
+
+    Returns:
+        Formatted prompt with question and instruction to use answer tags.
+
+    Raises:
+        ValueError: If question field is missing or invalid.
+    """
+    if "question" not in item:
+        raise ValueError("No question field found")
+
+    question = item["question"].strip()
+    if not question:
+        raise ValueError("Empty question field")
+
+    prompt = f"{question}\n\nPlease provide your answer between <answer> tags, like <answer>A</answer>."
+
+    return prompt
