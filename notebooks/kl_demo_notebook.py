@@ -3,7 +3,6 @@
 
 # %%
 import json
-import os
 from collections import defaultdict
 
 import matplotlib.patches as mpatches
@@ -98,6 +97,7 @@ def visualize_response_with_kl(
         max_value: Maximum value for colormap normalization
     """
     import html
+
     from matplotlib.colors import Normalize
 
     # Decode HTML entities and ensure proper Unicode handling
@@ -110,7 +110,7 @@ def visualize_response_with_kl(
             try:
                 if isinstance(text, bytes):
                     text = text.decode("utf-8")
-            except:
+            except Exception:
                 pass
         return text
 
@@ -295,14 +295,16 @@ def visualize_response_with_kl(
 
 
 # %%
-ind = 0
-display_num = 1
+ind = 6
+display_num = 2
 top_result = results1[ind]
+prompt = top_result["prompt"]
 prompt_idx = top_result["prompt_idx"]
-# search for prompt_idx in results2
-for result in results2:
+# search for prompt in results2
+top_result2 = None
+for ind2, result in enumerate(results2):
     if result["prompt_idx"] == prompt_idx:
-        top_result_2 = result
+        top_result2 = result
         break
 num_responses = len(top_result["response_kls_model2_per_token"])
 # Sort response indices by average KL (descending)
@@ -317,19 +319,25 @@ response_tokens_list = []
 kl_per_token_list = []
 for response_idx in range(display_num):
     response_tokens = load_response_tokens_from_file(
-        top_result["file_model2"], response_idx
+        top_result["file_model2"].replace(
+            "/workspace/projects/diffing-prompts/experiments/results/openrouter_samples/",
+            "../experiments/results/responses_openrouter/",
+        ),
+        int(response_idx),
     )
     response_tokens_list.append(response_tokens)
     kl_per_token_list.append(top_result["response_kls_model2_per_token"][response_idx])
 
 for response_idx in range(display_num):
     response_tokens2 = load_response_tokens_from_file(
-        top_result_2["file_model2"], response_idx
+        top_result2["file_model2"].replace(
+            "/workspace/projects/diffing-prompts/experiments/results/openrouter_samples/",
+            "../experiments/results/responses_openrouter/",
+        ),
+        int(response_idx),
     )
     response_tokens_list.append(response_tokens2)
-    kl_per_token_list.append(
-        top_result_2["response_kls_model2_per_token"][response_idx]
-    )
+    kl_per_token_list.append(top_result2["response_kls_model2_per_token"][response_idx])
 
 # Visualize all responses at once
 model_1_name = "Llama-3.3-70B"
@@ -341,7 +349,7 @@ fig = visualize_response_with_kl(
     response_tokens_2=response_tokens_list[display_num:],
     kl_per_token_2=kl_per_token_list[display_num:],
     title=(
-        f"Prompt {top_result['prompt_idx']} Average KL: {top_result['response_kls_model2_avg'][0]:.4f} (Red: {model_1_name}, Blue: {model_2_name})"
+        f"Prompt {top_result['prompt_idx']}, {ind, ind2} Average KL: {top_result['response_kls_model2_avg'][0]:.4f} (Red: {model_1_name}, Blue: {model_2_name})"
     ),
     cmap_name_1="Reds",
     cmap_name_2="Blues",
@@ -350,3 +358,244 @@ fig = visualize_response_with_kl(
 plt.show()
 
 # %%
+# Calculate average KL per token across all responses
+
+
+def calculate_avg_kl_per_token(results):
+    """
+    Calculate the average KL divergence per token across all responses.
+
+    Args:
+        results: List of result dictionaries from KL divergence calculation
+
+    Returns:
+        Tuple of (avg_kl_per_token dict, token_kl_map dict, token_prompts_map dict, token_prompts_kl_list dict)
+        - avg_kl_per_token: Dictionary mapping token strings to their average KL divergence
+        - token_kl_map: Dictionary mapping tokens to list of all KL values encountered
+        - token_prompts_map: Dictionary mapping tokens to set of prompt indices where they appear
+        - token_prompts_kl_list: Dictionary mapping tokens to list of (prompt_idx, kl_value) tuples
+    """
+    token_kl_map = defaultdict(list)
+    token_prompts_map = defaultdict(set)
+    token_prompts_kl_list = defaultdict(list)
+
+    # Iterate through all results (all prompts)
+    for result in tqdm(results, desc="Processing results"):
+        prompt_idx = result["prompt_idx"]
+        num_responses = len(result["response_kls_model2_per_token"])
+
+        # Get the response file path
+        response_file = result["file_model2"].replace(
+            "/workspace/projects/diffing-prompts/experiments/results/openrouter_samples/",
+            "../experiments/results/responses_openrouter/",
+        )
+
+        # Iterate through all responses for this prompt
+        for response_idx in range(num_responses):
+            try:
+                # Load response tokens
+                response_tokens = load_response_tokens_from_file(
+                    response_file, response_idx
+                )
+
+                # Get KL values for this response
+                kl_values = result["response_kls_model2_per_token"][response_idx]
+
+                # Map each token to its KL value
+                if len(response_tokens) == len(kl_values):
+                    for token, kl_value in zip(response_tokens, kl_values):
+                        token_kl_map[token].append(kl_value)
+                        token_prompts_map[token].add(prompt_idx)
+                        token_prompts_kl_list[token].append((prompt_idx, kl_value))
+                else:
+                    print(
+                        f"Warning: Token count mismatch for result {result['prompt_idx']}, response {response_idx}"
+                    )
+            except Exception as e:
+                print(
+                    f"Error processing result {result['prompt_idx']}, response {response_idx}: {e}"
+                )
+
+    # Calculate average KL for each token
+    avg_kl_per_token = {}
+    for token, kl_values in token_kl_map.items():
+        avg_kl_per_token[token] = np.mean(kl_values)
+
+    return avg_kl_per_token, token_kl_map, token_prompts_map, token_prompts_kl_list
+
+
+def print_top_k_tokens(
+    avg_kl_per_token,
+    token_kl_map=None,
+    token_prompts_map=None,
+    token_prompts_kl_list=None,
+    k=20,
+    min_count=1,
+):
+    """
+    Sort and print the top k tokens with highest average KL divergence.
+
+    Args:
+        avg_kl_per_token: Dictionary mapping tokens to average KL values
+        token_kl_map: Optional dictionary mapping tokens to list of KL values (for count)
+        token_prompts_map: Optional dictionary mapping tokens to set of prompt indices
+        token_prompts_kl_list: Optional dictionary mapping tokens to list of (prompt_idx, kl_value) tuples
+        k: Number of top tokens to display
+        min_count: Minimum number of occurrences to include a token (default: 1)
+
+    Returns:
+        List of tuples (token, avg_kl) sorted by average KL (descending)
+    """
+    # Sort tokens by average KL (descending)
+    sorted_tokens = sorted(avg_kl_per_token.items(), key=lambda x: x[1], reverse=True)
+
+    # Filter tokens by minimum count if token_kl_map is available
+    if token_kl_map is not None:
+        sorted_tokens = [
+            (token, avg_kl)
+            for token, avg_kl in sorted_tokens
+            if len(token_kl_map.get(token, [])) >= min_count
+        ]
+
+    print(f"\n{'=' * 70}")
+    print(f"Top {k} Tokens with Highest Average KL Divergence (min_count={min_count})")
+    print(f"{'=' * 70}")
+
+    for rank, (token, avg_kl) in enumerate(sorted_tokens[:k], 1):
+        # Get count of occurrences for this token (if token_kl_map is available)
+        if token_kl_map is not None:
+            token_count = len(token_kl_map.get(token, []))
+        else:
+            token_count = "N/A"
+
+        # Create readable representation
+        token_display = repr(token)[:60]  # Limit display width
+
+        print(f"\n{rank}. Token: {token_display}")
+        print(f"   Average KL: {avg_kl:.6f} | Count: {token_count}")
+
+        # Display all prompt indices where this token appears
+        if token_prompts_map is not None:
+            prompt_indices = sorted(token_prompts_map.get(token, set()))
+            prompts_str = ", ".join(map(str, prompt_indices[:20]))  # Show first 20
+            if len(prompt_indices) > 20:
+                prompts_str += f", ... (+{len(prompt_indices) - 20} more)"
+            print(f"   All Prompt Indices: {prompts_str}")
+
+        # Display top 5 prompts by KL value for this token
+        if token_prompts_kl_list is not None:
+            prompt_kl_pairs = token_prompts_kl_list.get(token, [])
+            if prompt_kl_pairs:
+                # Sort by KL value (descending) and get top 5
+                top_5_pairs = sorted(prompt_kl_pairs, key=lambda x: x[1], reverse=True)[
+                    :5
+                ]
+                top_5_str = ", ".join(
+                    [f"prompt {p_idx} (KL: {kl:.4f})" for p_idx, kl in top_5_pairs]
+                )
+                print(f"   Top 5 Prompts by KL: {top_5_str}")
+
+    return sorted_tokens
+
+
+# %%
+# Calculate average KL per token for results1
+print("\n" + "=" * 70)
+print("CALCULATING AVERAGE KL PER TOKEN ACROSS ALL RESPONSES")
+print("=" * 70)
+print("\nCalculating average KL per token for all responses...")
+(
+    avg_kl_per_token1,
+    token_kl_map1,
+    token_prompts_map1,
+    token_prompts_kl_list1,
+) = calculate_avg_kl_per_token(results1)
+
+print(f"\nTotal unique tokens found: {len(avg_kl_per_token1)}")
+# %%
+# Print top 50 tokens with minimum count of 20
+top_k = 100
+min_count = 20
+sorted_tokens1 = print_top_k_tokens(
+    avg_kl_per_token1,
+    token_kl_map=token_kl_map1,
+    token_prompts_map=token_prompts_map1,
+    token_prompts_kl_list=token_prompts_kl_list1,
+    k=top_k,
+    min_count=min_count,
+)
+
+# %%
+unsorted_ind = 417
+display_num = 5
+for ind in range(len(results1)):
+    top_result = results1[ind]
+    if top_result["prompt_idx"] == unsorted_ind:
+        break
+
+prompt = top_result["prompt"]
+prompt_idx = top_result["prompt_idx"]
+# search for prompt in results2
+top_result2 = None
+for ind2, result in enumerate(results2):
+    if result["prompt_idx"] == prompt_idx:
+        top_result2 = result
+        break
+num_responses = len(top_result["response_kls_model2_per_token"])
+# Sort response indices by average KL (descending)
+sorted_indices = sorted(
+    range(num_responses),
+    key=lambda idx: top_result["response_kls_model2_avg"][idx],
+    reverse=True,
+)
+
+# Collect all responses from both models
+response_tokens_list = []
+kl_per_token_list = []
+for response_idx in range(display_num):
+    response_tokens = load_response_tokens_from_file(
+        top_result["file_model2"].replace(
+            "/workspace/projects/diffing-prompts/experiments/results/openrouter_samples/",
+            "../experiments/results/responses_openrouter/",
+        ),
+        int(response_idx),
+    )
+    response_tokens_list.append(response_tokens)
+    kl_per_token_list.append(top_result["response_kls_model2_per_token"][response_idx])
+
+if top_result2 is not None:
+    for response_idx in range(display_num):
+        response_tokens2 = load_response_tokens_from_file(
+            top_result2["file_model2"].replace(
+                "/workspace/projects/diffing-prompts/experiments/results/openrouter_samples/",
+                "../experiments/results/responses_openrouter/",
+            ),
+            int(response_idx),
+        )
+        response_tokens_list.append(response_tokens2)
+        kl_per_token_list.append(
+            top_result2["response_kls_model2_per_token"][response_idx]
+        )
+
+# Visualize all responses at once
+model_1_name = "Llama-3.3-70B"
+model_2_name = "Llama-3.1-70B"
+fig = visualize_response_with_kl(
+    prompt=top_result["prompt"],
+    response_tokens_1=response_tokens_list[:display_num],
+    kl_per_token_1=kl_per_token_list[:display_num],
+    response_tokens_2=response_tokens_list[display_num:]
+    if top_result2 is not None
+    else None,
+    kl_per_token_2=kl_per_token_list[display_num:] if top_result2 is not None else None,
+    title=(
+        f"Prompt {top_result['prompt_idx']}, \n 3.1 vs 3.3: index: {ind}, KL: {top_result['response_kls_model2_avg'][0]:.4f} \n 3.3 vs 3.1: index: {ind2}, KL: {top_result2['response_kls_model2_avg'][0]:.4f} \n (Red: {model_1_name}, Blue: {model_2_name})"
+        if top_result2 is not None
+        else f"Prompt {top_result['prompt_idx']}, \n 3.1 vs 3.3: index: {ind}, KL: {top_result['response_kls_model2_avg'][0]:.4f} \n (Red: {model_1_name}, Blue: {model_2_name})"
+    ),
+    cmap_name_1="Reds",
+    cmap_name_2="Blues",
+    min_value=0,
+)
+plt.savefig(f"../plots/prompt_{unsorted_ind}.png")
+# plt.show()

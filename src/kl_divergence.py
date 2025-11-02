@@ -67,7 +67,7 @@ def calculate_kl_divergence_full_vocab(
 
     Returns:
         Tuple of (average KL divergence per token, list of per-token KLs,
-                  list of per-token entropies for model_1, list of per-token entropies for model_2,
+                  list of per-token entropies for model_1, list of per-token entropies for model_2)
     """
     # Format response with reasoning if provided
     if reasoning_text is not None:
@@ -119,12 +119,19 @@ def calculate_kl_divergence_full_vocab(
         # Extract log probs for the response tokens
         log_probs_2 = log_probs_2[0, len(user_prompt_tokens) - 1 : -1].cpu()
 
-    kl_per_token = calculate_kl_score_per_token(log_probs_1, log_probs_2)
+    kl_per_token, entropy_1_per_token, entropy_2_per_token = (
+        calculate_kl_score_per_token(log_probs_1, log_probs_2)
+    )
 
     # Average over tokens
     avg_kl = kl_per_token.mean().item()
 
-    return (avg_kl, kl_per_token.tolist())
+    return (
+        avg_kl,
+        kl_per_token.tolist(),
+        entropy_1_per_token.tolist(),
+        entropy_2_per_token.tolist(),
+    )
 
 
 def calculate_kl_score_per_token(log_probs_1, log_probs_2):
@@ -138,7 +145,54 @@ def calculate_kl_score_per_token(log_probs_1, log_probs_2):
         reduction="none",
         log_target=True,
     ).sum(dim=-1)  # Sum over vocabulary dimension
-    return kl_per_token
+
+    # Calculate entropy for model 1: H(P) = -sum(P * log(P))
+    # In log space: H(P) = -sum(exp(log_P) * log_P)
+    probs_1 = torch.exp(log_probs_1)
+    entropy_1_per_token = -(probs_1 * log_probs_1).sum(dim=-1)
+
+    # Calculate entropy for model 2: H(Q) = -sum(Q * log(Q))
+    probs_2 = torch.exp(log_probs_2)
+    entropy_2_per_token = -(probs_2 * log_probs_2).sum(dim=-1)
+
+    return kl_per_token, entropy_1_per_token, entropy_2_per_token
+
+
+def calculate_entropy_from_logprobs(
+    logprobs_list: List[Dict[str, float]],
+) -> Tuple[float, List[float]]:
+    """Calculate entropy from stored top-k logprobs data.
+
+    Calculates entropy: H(P) = -sum(P(x) * log(P(x)))
+    Uses only the top-k tokens available in the logprobs data.
+
+    Args:
+        logprobs_list: List of dicts mapping tokens to logprobs (log probabilities)
+
+    Returns:
+        Tuple of (average entropy per token, list of per-token entropies)
+    """
+    entropy_per_token = []
+
+    for logprobs in logprobs_list:
+        # Calculate entropy for this token position
+        # H(P) = -sum_x P(x) * log(P(x))
+        entropy = 0.0
+
+        for token, log_p in logprobs.items():
+            # Convert log prob to prob
+            p = math.exp(log_p)
+            # Entropy contribution: -P(x) * log(P(x))
+            entropy += -p * log_p
+
+        entropy_per_token.append(entropy)
+
+    # Average over tokens
+    avg_entropy = (
+        sum(entropy_per_token) / len(entropy_per_token) if entropy_per_token else 0.0
+    )
+
+    return avg_entropy, entropy_per_token
 
 
 def calculate_kl_divergence_from_logprobs(

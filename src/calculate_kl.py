@@ -270,9 +270,9 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
 
             response_kls_model2_avg = []
             response_kls_model2_per_token = []
+            response_entropy_1_per_token = []
+            response_entropy_2_per_token = []
             response_texts = []
-
-            prompt = data_model2["prompt"]
 
             for response_idx, response_data in enumerate(data_model2["responses"]):
                 try:
@@ -316,6 +316,16 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
                     response_kls_model2_avg.append(avg_kl)
                     response_kls_model2_per_token.append(kl_per_token.tolist())
 
+                    # Calculate entropy per token for both models
+                    probs_1 = torch.exp(log_probs_1)
+                    entropy_1_per_token = -(probs_1 * log_probs_1).sum(dim=-1)
+
+                    probs_2 = torch.exp(log_probs_2)
+                    entropy_2_per_token = -(probs_2 * log_probs_2).sum(dim=-1)
+
+                    response_entropy_1_per_token.append(entropy_1_per_token.tolist())
+                    response_entropy_2_per_token.append(entropy_2_per_token.tolist())
+
                 except Exception as e:
                     print(
                         f"Error processing prompt {prompt_idx}, response {response_idx}: {e}"
@@ -338,6 +348,8 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
                     "average_kl": avg_kl_model2,
                     "response_kls_model2_avg": response_kls_model2_avg,
                     "response_kls_model2_per_token": response_kls_model2_per_token,
+                    "response_entropy_1_per_token": response_entropy_1_per_token,
+                    "response_entropy_2_per_token": response_entropy_2_per_token,
                 }
             )
 
@@ -387,6 +399,8 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
             # Process responses from model 2: calculate KL(M1||M2)
             response_kls_model2_avg = []
             response_kls_model2_per_token = []
+            response_entropy_1_per_token = []
+            response_entropy_2_per_token = []
             response_texts = []
             for response_data in data_model2["responses"]:
                 response_text = response_data["choices"][0]["message"]["content"]
@@ -401,6 +415,8 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
                     (
                         avg_kl,
                         per_token_kls,
+                        entropy_1_per_token,
+                        entropy_2_per_token,
                     ) = calculate_kl_divergence_full_vocab(
                         prompt=prompt,
                         response_text=response_text,
@@ -414,6 +430,8 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
                     response_texts.append(response_text)
                     response_kls_model2_avg.append(avg_kl)
                     response_kls_model2_per_token.append(per_token_kls)
+                    response_entropy_1_per_token.append(entropy_1_per_token)
+                    response_entropy_2_per_token.append(entropy_2_per_token)
                 except Exception as e:
                     print(f"Error processing prompt {prompt_idx}, response: {e}")
                     continue
@@ -434,6 +452,8 @@ def main(config_path: str, max_prompts: Optional[int] = None, stage: str = "all"
                     "average_kl": avg_kl_model2,
                     "response_kls_model2_avg": response_kls_model2_avg,
                     "response_kls_model2_per_token": response_kls_model2_per_token,
+                    "response_entropy_1_per_token": response_entropy_1_per_token,
+                    "response_entropy_2_per_token": response_entropy_2_per_token,
                 }
             )
 
