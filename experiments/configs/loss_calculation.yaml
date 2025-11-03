@@ -1,0 +1,29 @@
+# Configuration for calculating cross-entropy loss with ground truth responses
+# Ground truth responses come from one model, and we evaluate another model's loss on them
+
+# Model to evaluate (this model's loss will be calculated)
+model_eval_name: "unsloth/Meta-Llama-3.1-70B-Instruct-bnb-4bit"
+
+# Optional: specify tokenizer separately if different from model
+# tokenizer_eval_name: "unsloth/Meta-Llama-3.1-70B-Instruct-bnb-4bit"
+
+# Directory containing ground truth response files
+# These responses will be treated as the correct answers
+responses_dir_ground_truth: "/workspace/projects/diffing-prompts/experiments/results/openrouter_samples/llama-3.3-70b"
+
+# Output directory for loss calculation results
+output_dir: "/workspace/projects/diffing-prompts/experiments/results/loss/loss_eval-3.1-70b_gt-3.3-70b"
+
+# Device mapping strategy for model loading
+# Options: "auto", "cuda:0", "cuda:1", "cpu", etc.
+device_map: "auto"
+
+# Reasoning trace configuration
+# Set to true to include reasoning traces in loss calculation
+# Reasoning will be extracted from the "reasoning" field in response JSON if present
+include_reasoning: false
+
+# Thinking tokens to wrap reasoning traces
+# Default values work for models like DeepSeek-R1
+thinking_token_start: "<think>"
+thinking_token_end: "</think>"
