@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KL Divergence Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+
+        .controls {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 6px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #555;
+        }
+
+        input[type="text"], select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .prompt-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #e8f5e9;
+            border-left: 4px solid #4CAF50;
+            border-radius: 4px;
+        }
+
+        .prompt-section h2 {
+            color: #2e7d32;
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+
+        .prompt-text {
+            color: #333;
+            font-size: 16px;
+            white-space: pre-wrap;
+        }
+
+        .response-selector {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #fff3e0;
+            border-radius: 4px;
+        }
+
+        .response-selector label {
+            color: #e65100;
+        }
+
+        .response-display {
+            padding: 20px;
+            background: #fafafa;
+            border-radius: 4px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .response-display h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        .token-heatmap {
+            font-family: 'Courier New', monospace;
+            font-size: 16px;
+            font-weight: 600;
+            line-height: 1.8;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+
+        .token {
+            display: inline;
+            padding: 2px 1px;
+            transition: background-color 0.2s;
+            cursor: help;
+            position: relative;
+        }
+
+        .token:hover {
+            outline: 2px solid rgba(0,0,0,0.5);
+            outline-offset: -2px;
+            z-index: 10;
+        }
+
+        .token[data-kl]:hover::after {
+            content: attr(data-kl);
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.95);
+            color: white;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: normal;
+            white-space: nowrap;
+            pointer-events: none;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        .token[data-kl]:hover::before {
+            content: '';
+            position: absolute;
+            bottom: calc(100% + 3px);
+            left: 50%;
+            transform: translateX(-50%);
+            border: 5px solid transparent;
+            border-top-color: rgba(0, 0, 0, 0.95);
+            z-index: 1001;
+            pointer-events: none;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            border-left: 4px solid #c62828;
+        }
+
+        .info {
+            background: #e3f2fd;
+            color: #1565c0;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            border-left: 4px solid #1565c0;
+        }
+
+        .metadata {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 4px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .metadata-item {
+            margin-bottom: 5px;
+        }
+
+        .legend {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 4px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .legend h4 {
+            margin-bottom: 10px;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .legend-scale {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            margin-bottom: 5px;
+        }
+
+        .legend-label {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .legend-gradient {
+            flex: 1;
+            height: 20px;
+            border-radius: 3px;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>KL Divergence Viewer</h1>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="directory-input">Directory Path:</label>
+                <input type="text" id="directory-input"
+                       value="/Users/bcywinski/work/code/diffing-prompts/experiments/results/kl/gemini-2.5-flash-lite-preview-09-2025"
+                       placeholder="Enter directory path">
+                <button onclick="loadFiles()">Load Files</button>
+            </div>
+
+            <div class="control-group">
+                <label for="file-select">Select File:</label>
+                <select id="file-select" onchange="loadFile()">
+                    <option value="">-- Select a file --</option>
+                </select>
+            </div>
+        </div>
+
+        <div id="error-message"></div>
+        <div id="info-message"></div>
+
+        <div id="content" style="display: none;">
+            <div class="prompt-section">
+                <h2>Prompt</h2>
+                <div class="prompt-text" id="prompt-text"></div>
+            </div>
+
+            <div class="response-selector">
+                <label for="response-select">Select Response:</label>
+                <select id="response-select" onchange="displayResponse()">
+                    <option value="">-- Select a response --</option>
+                </select>
+            </div>
+
+            <div class="response-display">
+                <h3>Response with KL Divergence Heatmap</h3>
+                <div class="legend" id="legend" style="display: none;">
+                    <h4>KL Divergence Scale:</h4>
+                    <div class="legend-scale">
+                        <span class="legend-label" id="legend-min">0.000000</span>
+                        <div class="legend-gradient" id="legend-gradient"></div>
+                        <span class="legend-label" id="legend-max">0.000000</span>
+                    </div>
+                    <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                        Hover over tokens to see exact KL divergence values
+                    </div>
+                </div>
+                <div class="token-heatmap" id="token-heatmap"></div>
+                <div class="metadata" id="metadata"></div>
+            </div>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">
+            Loading...
+        </div>
+    </div>
+
+    <script>
+        let currentData = null;
+        let maxKL = 0;
+        let minKL = Infinity;
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.innerHTML = `<div class="error">${message}</div>`;
+            errorDiv.style.display = 'block';
+        }
+
+        function showInfo(message) {
+            const infoDiv = document.getElementById('info-message');
+            infoDiv.innerHTML = `<div class="info">${message}</div>`;
+            infoDiv.style.display = 'block';
+        }
+
+        function clearMessages() {
+            document.getElementById('error-message').style.display = 'none';
+            document.getElementById('info-message').style.display = 'none';
+        }
+
+        function showLoading() {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('content').style.display = 'none';
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+        }
+
+        function getKLColor(klValue, minKL, maxKL) {
+            if (maxKL === minKL) return 'rgba(255, 255, 255, 0.7)';
+
+            // Normalize to 0-1 range
+            const normalized = (klValue - minKL) / (maxKL - minKL);
+
+            // Use a color scale from light yellow (low) to dark red (high)
+            // HSL: hue goes from yellow (60) to red (0)
+            const hue = 60 - (normalized * 60);
+            const saturation = 70 + (normalized * 30); // 70% to 100%
+            const lightness = 90 - (normalized * 40); // 90% to 50%
+
+            // Use rgba with opacity for transparency (0.7 = 70% opacity)
+            return `hsla(${hue}, ${saturation}%, ${lightness}%, 0.7)`;
+        }
+
+        async function loadFiles() {
+            clearMessages();
+            const directory = document.getElementById('directory-input').value.trim();
+
+            if (!directory) {
+                showError('Please enter a directory path');
+                return;
+            }
+
+            showLoading();
+
+            try {
+                const response = await fetch(`/api/files?directory=${encodeURIComponent(directory)}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to load files');
+                }
+
+                const fileSelect = document.getElementById('file-select');
+                fileSelect.innerHTML = '<option value="">-- Select a file --</option>';
+
+                if (data.files.length === 0) {
+                    showInfo('No JSON files found in the directory');
+                } else {
+                    data.files.forEach(file => {
+                        const option = document.createElement('option');
+                        option.value = file;
+                        option.textContent = file;
+                        fileSelect.appendChild(option);
+                    });
+                    showInfo(`Found ${data.files.length} file(s)`);
+                }
+            } catch (error) {
+                showError(`Error loading files: ${error.message}`);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function loadFile() {
+            clearMessages();
+            const directory = document.getElementById('directory-input').value.trim();
+            const filename = document.getElementById('file-select').value;
+
+            if (!filename) {
+                document.getElementById('content').style.display = 'none';
+                return;
+            }
+
+            showLoading();
+
+            try {
+                const response = await fetch(
+                    `/api/file?directory=${encodeURIComponent(directory)}&filename=${encodeURIComponent(filename)}`
+                );
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to load file');
+                }
+
+                currentData = data;
+
+                // Display prompt
+                document.getElementById('prompt-text').textContent = data.prompt || 'No prompt available';
+
+                // Populate response selector
+                const responseSelect = document.getElementById('response-select');
+                responseSelect.innerHTML = '<option value="">-- Select a response --</option>';
+
+                if (data.responses && data.responses.length > 0) {
+                    data.responses.forEach((resp, idx) => {
+                        const option = document.createElement('option');
+                        option.value = idx;
+                        option.textContent = `Response ${idx + 1} (${resp.num_tokens || 'N/A'} tokens)`;
+                        responseSelect.appendChild(option);
+                    });
+
+                    // Calculate min/max KL for all responses
+                    minKL = Infinity;
+                    maxKL = 0;
+                    data.responses.forEach(resp => {
+                        if (resp.token_details) {
+                            resp.token_details.forEach(token => {
+                                const kl = token.kl_divergence || 0;
+                                minKL = Math.min(minKL, kl);
+                                maxKL = Math.max(maxKL, kl);
+                            });
+                        }
+                    });
+
+                    // Display first response by default
+                    displayResponse();
+                } else {
+                    showInfo('No responses found in this file');
+                }
+
+            } catch (error) {
+                showError(`Error loading file: ${error.message}`);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function displayResponse() {
+            if (!currentData) return;
+
+            const responseIdx = parseInt(document.getElementById('response-select').value);
+            if (isNaN(responseIdx) || !currentData.responses || !currentData.responses[responseIdx]) {
+                document.getElementById('token-heatmap').innerHTML = '';
+                document.getElementById('metadata').innerHTML = '';
+                document.getElementById('legend').style.display = 'none';
+                return;
+            }
+
+            const response = currentData.responses[responseIdx];
+            const tokenDetails = response.token_details || [];
+
+            // Build token heatmap
+            let html = '';
+            tokenDetails.forEach(token => {
+                const kl = token.kl_divergence || 0;
+                const color = getKLColor(kl, minKL, maxKL);
+                const tokenText = escapeHtml(token.token || '');
+                html += `<span class="token" style="background-color: ${color};" data-kl="KL: ${kl.toFixed(6)}">${tokenText}</span>`;
+            });
+
+            document.getElementById('token-heatmap').innerHTML = html;
+
+            // Update legend gradient
+            const legendGradient = document.getElementById('legend-gradient');
+            const gradientStops = [];
+            for (let i = 0; i <= 100; i += 10) {
+                const normalized = i / 100;
+                const klValue = minKL + (normalized * (maxKL - minKL));
+                // For legend, match token opacity
+                if (maxKL === minKL) {
+                    gradientStops.push(`rgba(255, 255, 255, 0.7) ${i}%`);
+                } else {
+                    const hue = 60 - (normalized * 60);
+                    const saturation = 70 + (normalized * 30);
+                    const lightness = 90 - (normalized * 40);
+                    gradientStops.push(`hsla(${hue}, ${saturation}%, ${lightness}%, 0.7) ${i}%`);
+                }
+            }
+            legendGradient.style.background = `linear-gradient(to right, ${gradientStops.join(', ')})`;
+
+            // Update legend labels with actual KL values
+            document.getElementById('legend-min').textContent = minKL.toFixed(6);
+            document.getElementById('legend-max').textContent = maxKL.toFixed(6);
+
+            document.getElementById('legend').style.display = 'block';
+
+            // Display metadata
+            const metadata = [
+                `Model 1: ${currentData.model1 || 'N/A'}`,
+                `Model 2: ${currentData.model2 || 'N/A'}`,
+                `Total Responses: ${currentData.num_responses || 'N/A'}`,
+                `Response Tokens: ${response.num_tokens || 'N/A'}`,
+                `KL Range: ${minKL.toFixed(6)} - ${maxKL.toFixed(6)}`
+            ].map(item => `<div class="metadata-item">${item}</div>`).join('');
+
+            document.getElementById('metadata').innerHTML = metadata;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Load files on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            loadFiles();
+        });
+    </script>
+</body>
+</html>
