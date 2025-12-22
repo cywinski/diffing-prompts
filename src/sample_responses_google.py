@@ -3,6 +3,7 @@
 
 import argparse
 import asyncio
+import functools
 from pathlib import Path
 from typing import Optional
 
@@ -16,6 +17,37 @@ from prompts_loader import (
     wildchat_language_filter,
     wildchat_prompt_extractor,
 )
+
+
+class AsyncRateLimiter:
+    """A simple async rate limiter enforcing a minimum interval between calls."""
+
+    def __init__(self, requests_per_second: float):
+        if requests_per_second <= 0:
+            raise ValueError("requests_per_second must be > 0")
+        self._min_interval = 1.0 / requests_per_second
+        self._lock = asyncio.Lock()
+        self._next_allowed_time = 0.0
+
+    async def wait(self) -> None:
+        async with self._lock:
+            now = asyncio.get_running_loop().time()
+            sleep_for = self._next_allowed_time - now
+            if sleep_for > 0:
+                await asyncio.sleep(sleep_for)
+                now = asyncio.get_running_loop().time()
+            self._next_allowed_time = now + self._min_interval
+
+
+def rate_limit_async(rate_limiter: AsyncRateLimiter, fn):
+    """Wrap an async function so each call is rate-limited by the given limiter."""
+
+    @functools.wraps(fn)
+    async def wrapper(*args, **kwargs):
+        await rate_limiter.wait()
+        return await fn(*args, **kwargs)
+
+    return wrapper
 
 
 def load_config(config_path: str) -> dict:
@@ -69,6 +101,8 @@ async def sample_responses_for_model(
     print(f"{'=' * 60}\n")
 
     client = GoogleClient(project_id=project_id, location=location)
+    # Limit outbound requests to 2 per second (shared across all concurrent tasks).
+    client.sample_response = rate_limit_async(AsyncRateLimiter(2), client.sample_response)
 
     samples = await client.sample_prompts_batch(
         prompts=prompts,

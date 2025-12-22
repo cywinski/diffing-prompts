@@ -15,7 +15,6 @@ from dotenv import load_dotenv
 from google import genai
 from google.cloud import storage
 from google.genai.types import CreateBatchJobConfig
-from tqdm import tqdm
 
 
 class KLDivergenceBatchCalculator:
@@ -268,6 +267,8 @@ class KLDivergenceBatchCalculator:
             if completed_count < total_jobs:
                 await asyncio.sleep(poll_interval)
 
+        # Print final message on new line
+        print()  # New line after progress updates
         print(f"    ✓ All {total_jobs} batch jobs completed successfully")
 
     def _download_batch_output(self, output_uri_prefix: str) -> List[Dict[str, Any]]:
@@ -414,6 +415,79 @@ class KLDivergenceBatchCalculator:
 
         return model2_tokens
 
+    def prepare_batch_job(
+        self,
+        prompt: str,
+        target_tokens: List[Dict[str, Any]],
+        top_logprobs: int = 20,
+        job_prefix: str = "kl_job",
+    ) -> Dict[str, Any]:
+        """Prepare batch job by creating requests and uploading to GCS.
+
+        Args:
+            prompt: User prompt.
+            target_tokens: List of token data from Model 1.
+            top_logprobs: Number of top logprobs to return per token.
+            job_prefix: Prefix for batch job names.
+
+        Returns:
+            Dictionary with job metadata (input_uri, output_uri_prefix, target_tokens, top_logprobs).
+        """
+        # Create batch requests
+        requests = self._create_batch_requests(prompt, target_tokens, top_logprobs)
+
+        # Upload input to GCS
+        timestamp = int(time.time())
+        input_blob_name = f"batch_input/{job_prefix}_{timestamp}.jsonl"
+        input_uri = self._upload_batch_input(requests, input_blob_name)
+
+        # Prepare output URI
+        output_uri_prefix = (
+            f"gs://{self.bucket_name}/batch_output/{job_prefix}_{timestamp}/"
+        )
+
+        return {
+            "input_uri": input_uri,
+            "output_uri_prefix": output_uri_prefix,
+            "target_tokens": target_tokens,
+            "top_logprobs": top_logprobs,
+            "num_requests": len(requests),
+        }
+
+    async def submit_batch_job_async(self, job_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Submit a batch job asynchronously.
+
+        Args:
+            job_info: Job metadata from prepare_batch_job.
+
+        Returns:
+            Updated job_info with job_name added.
+        """
+        job_name = await self._submit_batch_job(
+            job_info["input_uri"], job_info["output_uri_prefix"]
+        )
+        job_info["job_name"] = job_name
+        return job_info
+
+    async def download_and_parse_batch_results(
+        self, job_info: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Download and parse batch results.
+
+        Args:
+            job_info: Job metadata with completed job.
+
+        Returns:
+            List of token dictionaries with logprobs from Model 2.
+        """
+        results = self._download_batch_output(job_info["output_uri_prefix"])
+        model2_tokens = self._parse_batch_results(
+            results,
+            job_info["target_tokens"],
+            job_info["top_logprobs"],
+        )
+        return model2_tokens
+
     async def get_batch_logprobs(
         self,
         prompt: str,
@@ -500,18 +574,54 @@ class KLDivergenceBatchCalculator:
             kl_div = self._calculate_kl_divergence(model1_dist, model2_dist)
             kl_divergences.append(kl_div)
 
+            entropy = self._calculate_entropy_from_top_logprobs(model1_top)
+
             # Store token details
             token_details.append(
                 {
                     "position": i,
                     "token": token1_data["token"],
                     "kl_divergence": kl_div,
+                    "entropy": entropy,
                     "model1_chosen_logprob": token1_data.get("logprob"),
                     "model2_chosen_logprob": token2_data.get("logprob"),
                 }
             )
 
         return kl_divergences, token_details
+
+    def _calculate_entropy_from_top_logprobs(
+        self, top_logprobs: List[Dict[str, Any]]
+    ) -> Optional[float]:
+        """Calculate entropy from a top-k (truncated) logprob list.
+
+        This computes entropy over the normalized top-k distribution:
+          H = -Σ p_i log(p_i)
+        where p_i ∝ exp(logprob_i).
+        """
+        if not top_logprobs:
+            return None
+
+        probs = []
+        total = 0.0
+        for item in top_logprobs:
+            logprob = item.get("logprob")
+            if logprob is None:
+                continue
+            p = math.exp(logprob)
+            probs.append(p)
+            total += p
+
+        if total <= 0.0 or not probs:
+            return None
+
+        entropy = 0.0
+        for p in probs:
+            pn = p / total
+            if pn > 0.0:
+                entropy -= pn * math.log(pn)
+
+        return entropy
 
     def _build_distribution(
         self, top_logprobs: List[Dict[str, Any]]
@@ -648,7 +758,7 @@ async def process_json_file(
     output_dir: Path,
     top_logprobs: int = 20,
 ) -> None:
-    """Process a single JSON file to calculate KL divergences."""
+    """Process a single JSON file to calculate KL divergences using concurrent batch jobs."""
     with open(json_path, "r") as f:
         data = json.load(f)
 
@@ -661,33 +771,184 @@ async def process_json_file(
         return
 
     print(f"\nProcessing {len(responses)} responses from {json_path.name}...")
-    results = []
 
     # Use filename stem as job prefix
     job_prefix = json_path.stem
 
-    for i, response in enumerate(responses):
-        result = await calculator.process_response(
-            prompt=prompt,
-            response_data=response,
-            top_logprobs=top_logprobs,
-            response_idx=i,
-            job_prefix=job_prefix,
-        )
-        results.append(result)
+    # Prepare output path
+    output_filename = json_path.stem + "_kl.json"
+    output_path = output_dir / output_filename
 
-    # Save results
+    # Prepare base output data structure
     output_data = {
         "prompt": prompt,
         "model1": model1_name,
         "model2": calculator.model_id,
-        "num_responses": len(results),
-        "responses": results,
+        "num_responses": len(responses),
+        "responses": [],
     }
 
-    output_filename = json_path.stem + "_kl.json"
-    output_path = output_dir / output_filename
+    # Step 1: Prepare all batch jobs
+    print(f"  Preparing {len(responses)} batch jobs...")
+    job_infos = []
+    error_results = []
+    for i, response in enumerate(responses):
+        text = response.get("text", "")
+        model1_logprobs = response.get("logprobs", {}).get("content", [])
 
+        if not text or not model1_logprobs:
+            error_results.append(
+                {
+                    "response_idx": i,
+                    "text": text,
+                    "error": "Missing text or logprobs in response data",
+                }
+            )
+            continue
+
+        job_info = calculator.prepare_batch_job(
+            prompt=prompt,
+            target_tokens=model1_logprobs,
+            top_logprobs=top_logprobs,
+            job_prefix=f"{job_prefix}_resp{i}",
+        )
+        job_info["response_idx"] = i
+        job_info["text"] = text
+        job_info["model1_logprobs"] = model1_logprobs
+        job_info["num_tokens"] = len(model1_logprobs)
+        job_infos.append(job_info)
+
+    print(
+        f"  Created {len(job_infos)} batch jobs ({sum(j['num_requests'] for j in job_infos)} total requests)"
+    )
+
+    # Step 2: Submit all jobs with rate limiting (max 2 requests per second)
+    print("  Submitting all batch jobs with rate limiting (max 2 req/s)...")
+    valid_job_infos = []
+    delay_between_submissions = 0.5  # 0.5 seconds = 2 requests per second
+
+    for i, job_info in enumerate(job_infos):
+        try:
+            result = await calculator.submit_batch_job_async(job_info)
+            valid_job_infos.append(result)
+        except Exception as e:
+            error_results.append(
+                {
+                    "response_idx": job_info["response_idx"],
+                    "text": job_info["text"],
+                    "error": f"Failed to submit batch job: {str(e)}",
+                }
+            )
+
+        # Add delay between submissions (except for the last one)
+        if i < len(job_infos) - 1:
+            await asyncio.sleep(delay_between_submissions)
+
+    job_infos = valid_job_infos
+
+    print(f"  ✓ Submitted {len(job_infos)} jobs")
+
+    if not job_infos:
+        print("  No valid jobs to process")
+        # Save error results
+        output_data["responses"] = sorted(
+            error_results, key=lambda x: x["response_idx"]
+        )
+        with open(output_path, "w") as f:
+            json.dump(output_data, f, indent=2)
+        return
+
+    # Step 3: Wait for all jobs concurrently with progress updates
+    print("  Waiting for all batch jobs to complete...")
+    job_names = [job_info["job_name"] for job_info in job_infos]
+    try:
+        await calculator._wait_for_multiple_jobs(job_names)
+    except Exception as e:
+        print(f"  Warning: Error waiting for jobs: {e}")
+
+    # Step 4: Download and parse all results concurrently
+    print("  Downloading and parsing results...")
+    try:
+        model2_logprobs_list = await asyncio.gather(
+            *[
+                calculator.download_and_parse_batch_results(job_info)
+                for job_info in job_infos
+            ],
+            return_exceptions=True,
+        )
+        # Handle exceptions in download/parse
+        valid_results = []
+        for i, result in enumerate(model2_logprobs_list):
+            if isinstance(result, Exception):
+                error_results.append(
+                    {
+                        "response_idx": job_infos[i]["response_idx"],
+                        "text": job_infos[i]["text"],
+                        "error": f"Failed to download/parse results: {str(result)}",
+                    }
+                )
+            else:
+                valid_results.append((job_infos[i], result))
+        job_info_result_pairs = valid_results
+    except Exception as e:
+        print(f"  Error downloading results: {e}")
+        job_info_result_pairs = []
+
+    print(f"  ✓ Downloaded and parsed {len(job_info_result_pairs)} results")
+
+    # Step 5: Calculate KL divergences and build results
+    print("  Calculating KL divergences...")
+    results = []
+
+    # Add error results first (sorted by response_idx)
+    error_results.sort(key=lambda x: x["response_idx"])
+    for error_result in error_results:
+        results.append(error_result)
+
+    # Process successful results
+    for job_info, model2_logprobs in job_info_result_pairs:
+        i = job_info["response_idx"]
+        model1_logprobs = job_info["model1_logprobs"]
+        text = job_info["text"]
+
+        try:
+            kl_divergences, token_details = calculator.calculate_kl_per_token(
+                model1_logprobs, model2_logprobs
+            )
+        except Exception as e:
+            results.append(
+                {
+                    "error": f"Failed to calculate KL divergence: {str(e)}",
+                    "text": text,
+                    "model1_tokens": len(model1_logprobs),
+                    "model2_tokens": len(model2_logprobs),
+                }
+            )
+            continue
+
+        # Calculate statistics
+        kl_array = np.array(kl_divergences)
+        result = {
+            "text": text,
+            "num_tokens": len(kl_divergences),
+            "kl_per_token": kl_divergences,
+            "token_details": token_details,
+            "statistics": {
+                "mean_kl": float(np.mean(kl_array)),
+                "median_kl": float(np.median(kl_array)),
+                "std_kl": float(np.std(kl_array)),
+                "min_kl": float(np.min(kl_array)),
+                "max_kl": float(np.max(kl_array)),
+                "total_kl": float(np.sum(kl_array)),
+            },
+        }
+        results.append(result)
+
+    # Sort results by response_idx to maintain order
+    results.sort(key=lambda x: x.get("response_idx", -1))
+
+    # Save final results
+    output_data["responses"] = results
     with open(output_path, "w") as f:
         json.dump(output_data, f, indent=2)
 
@@ -741,21 +1002,249 @@ async def process_directory(
     )
 
     print(f"Comparing against model: {model2_id}")
-    print("Using batch prediction API")
+    print("Using batch prediction API (concurrent mode - all files)")
     print(f"GCS bucket: {calculator.bucket_name}")
     print(f"Output directory: {output_dir}\n")
 
-    for json_file in tqdm(json_files, desc="Processing files"):
+    # Step 1: Load all files and prepare all batch jobs
+    print("Loading all files and preparing batch jobs...")
+    file_data_list = []
+    job_infos = []
+    error_results_by_file = {}
+
+    for json_file in json_files:
         try:
-            await process_json_file(
-                json_path=json_file,
-                calculator=calculator,
-                output_dir=output_path,
-                top_logprobs=top_logprobs,
+            with open(json_file, "r") as f:
+                data = json.load(f)
+
+            prompt = data.get("prompt", "")
+            model1_name = data.get("model", "unknown")
+            responses = data.get("responses", [])
+
+            if not prompt or not responses:
+                print(f"Skipping {json_file.name}: missing prompt or responses")
+                continue
+
+            file_data = {
+                "json_file": json_file,
+                "prompt": prompt,
+                "model1_name": model1_name,
+                "responses": responses,
+                "output_filename": json_file.stem + "_kl.json",
+            }
+            file_data_list.append(file_data)
+
+            # Prepare batch jobs for all responses in this file
+            job_prefix = json_file.stem
+            file_errors = []
+
+            for i, response in enumerate(responses):
+                text = response.get("text", "")
+                model1_logprobs = response.get("logprobs", {}).get("content", [])
+
+                if not text or not model1_logprobs:
+                    file_errors.append(
+                        {
+                            "response_idx": i,
+                            "text": text,
+                            "error": "Missing text or logprobs in response data",
+                        }
+                    )
+                    continue
+
+                job_info = calculator.prepare_batch_job(
+                    prompt=prompt,
+                    target_tokens=model1_logprobs,
+                    top_logprobs=top_logprobs,
+                    job_prefix=f"{job_prefix}_resp{i}",
+                )
+                job_info["file_idx"] = len(file_data_list) - 1
+                job_info["response_idx"] = i
+                job_info["text"] = text
+                job_info["model1_logprobs"] = model1_logprobs
+                job_info["num_tokens"] = len(model1_logprobs)
+                job_infos.append(job_info)
+
+            if file_errors:
+                error_results_by_file[json_file.name] = file_errors
+
+        except Exception as e:
+            print(f"Error loading {json_file.name}: {e}")
+            continue
+
+    total_requests = sum(j["num_requests"] for j in job_infos)
+    print(
+        f"✓ Prepared {len(job_infos)} batch jobs across {len(file_data_list)} files ({total_requests} total requests)"
+    )
+
+    if not job_infos:
+        print("No valid jobs to process")
+        return
+
+    # Step 2: Submit all jobs with rate limiting (max 2 requests per second)
+    print("Submitting all batch jobs with rate limiting (max 2 req/s)...")
+    valid_job_infos = []
+    delay_between_submissions = 0.5  # 0.5 seconds = 2 requests per second
+
+    for i, job_info in enumerate(job_infos):
+        try:
+            result = await calculator.submit_batch_job_async(job_info)
+            valid_job_infos.append(result)
+            if (i + 1) % 10 == 0:
+                print(f"  Submitted {i + 1}/{len(job_infos)} jobs...")
+        except Exception as e:
+            file_name = file_data_list[job_info["file_idx"]]["json_file"].name
+            if file_name not in error_results_by_file:
+                error_results_by_file[file_name] = []
+            error_results_by_file[file_name].append(
+                {
+                    "response_idx": job_info["response_idx"],
+                    "text": job_info["text"],
+                    "error": f"Failed to submit batch job: {str(e)}",
+                }
+            )
+
+        # Add delay between submissions (except for the last one)
+        if i < len(job_infos) - 1:
+            await asyncio.sleep(delay_between_submissions)
+
+    job_infos = valid_job_infos
+
+    print(f"✓ Submitted {len(job_infos)} jobs")
+
+    if not job_infos:
+        print("No valid jobs to process")
+        # Save error results for each file
+        for file_data in file_data_list:
+            file_name = file_data["json_file"].name
+            if file_name in error_results_by_file:
+                output_data = {
+                    "prompt": file_data["prompt"],
+                    "model1": file_data["model1_name"],
+                    "model2": calculator.model_id,
+                    "num_responses": len(error_results_by_file[file_name]),
+                    "responses": sorted(
+                        error_results_by_file[file_name],
+                        key=lambda x: x["response_idx"],
+                    ),
+                }
+                output_path_file = output_path / file_data["output_filename"]
+                with open(output_path_file, "w") as f:
+                    json.dump(output_data, f, indent=2)
+        return
+
+    # Step 3: Wait for all jobs concurrently with progress updates
+    print("Waiting for all batch jobs to complete...")
+    job_names = [job_info["job_name"] for job_info in job_infos]
+    try:
+        await calculator._wait_for_multiple_jobs(job_names)
+    except Exception as e:
+        print(f"Warning: Error waiting for jobs: {e}")
+
+    # Step 4: Download and parse all results concurrently
+    print("Downloading and parsing results...")
+    try:
+        model2_logprobs_list = await asyncio.gather(
+            *[
+                calculator.download_and_parse_batch_results(job_info)
+                for job_info in job_infos
+            ],
+            return_exceptions=True,
+        )
+        # Handle exceptions in download/parse
+        valid_results = []
+        for i, result in enumerate(model2_logprobs_list):
+            if isinstance(result, Exception):
+                job_info = job_infos[i]
+                file_name = file_data_list[job_info["file_idx"]]["json_file"].name
+                if file_name not in error_results_by_file:
+                    error_results_by_file[file_name] = []
+                error_results_by_file[file_name].append(
+                    {
+                        "response_idx": job_info["response_idx"],
+                        "text": job_info["text"],
+                        "error": f"Failed to download/parse results: {str(result)}",
+                    }
+                )
+            else:
+                valid_results.append((job_infos[i], result))
+        job_info_result_pairs = valid_results
+    except Exception as e:
+        print(f"Error downloading results: {e}")
+        job_info_result_pairs = []
+
+    print(f"✓ Downloaded and parsed {len(job_info_result_pairs)} results")
+
+    # Step 5: Calculate KL divergences and group results by file
+    print("Calculating KL divergences and grouping results by file...")
+    results_by_file = {file_data["json_file"].name: [] for file_data in file_data_list}
+
+    # Add error results
+    for file_name, errors in error_results_by_file.items():
+        results_by_file[file_name].extend(errors)
+
+    # Process successful results
+    for job_info, model2_logprobs in job_info_result_pairs:
+        file_idx = job_info["file_idx"]
+        file_name = file_data_list[file_idx]["json_file"].name
+        i = job_info["response_idx"]
+        model1_logprobs = job_info["model1_logprobs"]
+        text = job_info["text"]
+
+        try:
+            kl_divergences, token_details = calculator.calculate_kl_per_token(
+                model1_logprobs, model2_logprobs
             )
         except Exception as e:
-            print(f"Error processing {json_file.name}: {e}")
+            results_by_file[file_name].append(
+                {
+                    "response_idx": i,
+                    "error": f"Failed to calculate KL divergence: {str(e)}",
+                    "text": text,
+                    "model1_tokens": len(model1_logprobs),
+                    "model2_tokens": len(model2_logprobs),
+                }
+            )
             continue
+
+        # Calculate statistics
+        kl_array = np.array(kl_divergences)
+        result = {
+            "response_idx": i,
+            "text": text,
+            "num_tokens": len(kl_divergences),
+            "kl_per_token": kl_divergences,
+            "token_details": token_details,
+            "statistics": {
+                "mean_kl": float(np.mean(kl_array)),
+                "median_kl": float(np.median(kl_array)),
+                "std_kl": float(np.std(kl_array)),
+                "min_kl": float(np.min(kl_array)),
+                "max_kl": float(np.max(kl_array)),
+                "total_kl": float(np.sum(kl_array)),
+            },
+        }
+        results_by_file[file_name].append(result)
+
+    # Step 6: Sort results by response_idx and save each file
+    print("Saving results...")
+    for file_data in file_data_list:
+        file_name = file_data["json_file"].name
+        results = results_by_file.get(file_name, [])
+        results.sort(key=lambda x: x.get("response_idx", -1))
+
+        output_data = {
+            "prompt": file_data["prompt"],
+            "model1": file_data["model1_name"],
+            "model2": calculator.model_id,
+            "num_responses": len(results),
+            "responses": results,
+        }
+
+        output_path_file = output_path / file_data["output_filename"]
+        with open(output_path_file, "w") as f:
+            json.dump(output_data, f, indent=2)
+        print(f"  ✓ Saved {file_data['output_filename']}")
 
     print("\n✓ All processing complete!")
     print(f"Results saved to: {output_dir}")

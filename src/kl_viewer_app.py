@@ -31,7 +31,13 @@ def load_json_file(directory: str, filename: str):
 @app.route("/")
 def index():
     """Render the main page."""
-    return render_template("index.html")
+    return render_template(
+        "index.html",
+        default_directory=app.config.get("DEFAULT_DIRECTORY", ""),
+        normalize_by_entropy_default=app.config.get(
+            "NORMALIZE_BY_ENTROPY_DEFAULT", False
+        ),
+    )
 
 
 @app.route("/api/files")
@@ -64,17 +70,21 @@ def get_file():
 def main(
     directory: str = "/Users/bcywinski/work/code/diffing-prompts/experiments/results/kl/gemini-2.5-flash-lite-preview-09-2025",
     port: int = 5000,
+    normalize_by_entropy: bool = False,
 ):
     """Run the KL Divergence Viewer Flask app.
 
     Args:
         directory: Directory path containing JSON files to display
         port: Port number to run the server on (default: 5000)
+        normalize_by_entropy: Whether to display KL divided by entropy by default
     """
     print(f"KL Divergence Viewer")
     print(f"Serving files from: {directory}")
     print(f"Open http://localhost:{port} in your browser")
 
+    app.config["DEFAULT_DIRECTORY"] = directory
+    app.config["NORMALIZE_BY_ENTROPY_DEFAULT"] = normalize_by_entropy
     app.run(debug=True, host="0.0.0.0", port=port)
 
 

@@ -267,18 +267,54 @@ class KLDivergenceCalculator:
             kl_div = self._calculate_kl_divergence(model1_dist, model2_dist)
             kl_divergences.append(kl_div)
 
+            entropy = self._calculate_entropy_from_top_logprobs(model1_top)
+
             # Store token details
             token_details.append(
                 {
                     "position": i,
                     "token": token1_data["token"],
                     "kl_divergence": kl_div,
+                    "entropy": entropy,
                     "model1_chosen_logprob": token1_data.get("logprob"),
                     "model2_chosen_logprob": token2_data.get("logprob"),
                 }
             )
 
         return kl_divergences, token_details
+
+    def _calculate_entropy_from_top_logprobs(
+        self, top_logprobs: List[Dict[str, Any]]
+    ) -> Optional[float]:
+        """Calculate entropy from a top-k (truncated) logprob list.
+
+        This computes entropy over the normalized top-k distribution:
+          H = -Σ p_i log(p_i)
+        where p_i ∝ exp(logprob_i).
+        """
+        if not top_logprobs:
+            return None
+
+        probs = []
+        total = 0.0
+        for item in top_logprobs:
+            logprob = item.get("logprob")
+            if logprob is None:
+                continue
+            p = math.exp(logprob)
+            probs.append(p)
+            total += p
+
+        if total <= 0.0 or not probs:
+            return None
+
+        entropy = 0.0
+        for p in probs:
+            pn = p / total
+            if pn > 0.0:
+                entropy -= pn * math.log(pn)
+
+        return entropy
 
     def _build_distribution(
         self, top_logprobs: List[Dict[str, Any]]

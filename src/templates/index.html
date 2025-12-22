@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -23,7 +24,7 @@
             margin: 0 auto;
             background: white;
             border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
             padding: 30px;
         }
 
@@ -52,7 +53,8 @@
             color: #555;
         }
 
-        input[type="text"], select {
+        input[type="text"],
+        select {
             width: 100%;
             padding: 10px;
             border: 1px solid #ddd;
@@ -143,7 +145,7 @@
         }
 
         .token:hover {
-            outline: 2px solid rgba(0,0,0,0.5);
+            outline: 2px solid rgba(0, 0, 0, 0.5);
             outline-offset: -2px;
             z-index: 10;
         }
@@ -163,7 +165,7 @@
             white-space: nowrap;
             pointer-events: none;
             z-index: 1000;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
         }
 
         .token[data-kl]:hover::before {
@@ -249,6 +251,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <h1>KL Divergence Viewer</h1>
@@ -256,9 +259,8 @@
         <div class="controls">
             <div class="control-group">
                 <label for="directory-input">Directory Path:</label>
-                <input type="text" id="directory-input"
-                       value="/Users/bcywinski/work/code/diffing-prompts/experiments/results/kl/gemini-2.5-flash-lite-preview-09-2025"
-                       placeholder="Enter directory path">
+                <input type="text" id="directory-input" value="{{ default_directory }}"
+                    placeholder="Enter directory path">
                 <button onclick="loadFiles()">Load Files</button>
             </div>
 
@@ -267,6 +269,30 @@
                 <select id="file-select" onchange="loadFile()">
                     <option value="">-- Select a file --</option>
                 </select>
+            </div>
+
+            <div class="control-group">
+                <label style="display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 0;">
+                    <input type="checkbox" id="normalize-by-entropy" {% if normalize_by_entropy_default %}checked{%
+                        endif %} onchange="onNormalizeByEntropyChanged()">
+                    Divide KL by entropy (from top-20 logprobs)
+                </label>
+            </div>
+
+            <div class="control-group">
+                <label for="kl-threshold">Min KL threshold for dividing by entropy:</label>
+                <input type="text" id="kl-threshold" value="0.01" onchange="onKLThresholdChanged()">
+            </div>
+
+            <div class="control-group" style="display: flex; gap: 20px;">
+                <div style="flex: 1;">
+                    <label for="min-score">Min Score (clamp floor):</label>
+                    <input type="text" id="min-score" value="0.0" onchange="onScoreLimitsChanged()">
+                </div>
+                <div style="flex: 1;">
+                    <label for="max-score">Max Score (clamp ceiling):</label>
+                    <input type="text" id="max-score" value="5.0" onchange="onScoreLimitsChanged()">
+                </div>
             </div>
         </div>
 
@@ -289,7 +315,7 @@
             <div class="response-display">
                 <h3>Response with KL Divergence Heatmap</h3>
                 <div class="legend" id="legend" style="display: none;">
-                    <h4>KL Divergence Scale:</h4>
+                    <h4 id="legend-title">KL Divergence Scale:</h4>
                     <div class="legend-scale">
                         <span class="legend-label" id="legend-min">0.000000</span>
                         <div class="legend-gradient" id="legend-gradient"></div>
@@ -310,9 +336,17 @@
     </div>
 
     <script>
+        // Configurable min/max score limits to avoid extreme values
+        let minScore = 0.0;
+        let maxScore = 5.0;
+
         let currentData = null;
-        let maxKL = 0;
-        let minKL = Infinity;
+        let globalMaxKL = 0;
+        let globalMinKL = 0;
+        let normalizeByEntropy = {{ 'true' if normalize_by_entropy_default else 'false' }};
+        let klThreshold = 0.01;
+        let loadFilesRunId = 0;
+        let loadFileRunId = 0;
 
         function showError(message) {
             const errorDiv = document.getElementById('error-message');
@@ -341,11 +375,11 @@
             document.getElementById('content').style.display = 'block';
         }
 
-        function getKLColor(klValue, minKL, maxKL) {
-            if (maxKL === minKL) return 'rgba(255, 255, 255, 0.7)';
+        function getKLColor(klValue) {
+            if (globalMaxKL === globalMinKL) return 'rgba(255, 255, 255, 0.7)';
 
-            // Normalize to 0-1 range
-            const normalized = (klValue - minKL) / (maxKL - minKL);
+            // Normalize to 0-1 range, clamping to [0, 1]
+            const normalized = Math.max(0, Math.min(1, (klValue - globalMinKL) / (globalMaxKL - globalMinKL)));
 
             // Use a color scale from light yellow (low) to dark red (high)
             // HSL: hue goes from yellow (60) to red (0)
@@ -357,9 +391,92 @@
             return `hsla(${hue}, ${saturation}%, ${lightness}%, 0.7)`;
         }
 
+        function getDisplayedKL(token) {
+            let kl = token.kl_divergence || 0;
+            if (normalizeByEntropy && kl > klThreshold) {
+                const entropy = token.entropy;
+                if (entropy !== null && entropy !== undefined && entropy > 0) {
+                    kl = kl / entropy;
+                }
+            }
+            // Clamp to configured min/max score limits
+            return Math.max(minScore, Math.min(maxScore, kl));
+        }
+
+        function collectKLValuesFromFile(fileData, values) {
+            if (!fileData || !fileData.responses) return;
+
+            fileData.responses.forEach(resp => {
+                if (resp.token_details) {
+                    resp.token_details.forEach(token => {
+                        const v = getDisplayedKL(token);
+                        if (Number.isFinite(v)) values.push(v);
+                    });
+                }
+            });
+        }
+
+        function computeGlobalMinMax(allValues) {
+            if (allValues.length === 0) {
+                globalMinKL = 0;
+                globalMaxKL = 0;
+                return;
+            }
+
+            allValues.sort((a, b) => a - b);
+
+            function percentile(sortedVals, p) {
+                if (sortedVals.length === 0) return 0;
+                const idx = (sortedVals.length - 1) * p;
+                const lo = Math.floor(idx);
+                const hi = Math.ceil(idx);
+                if (lo === hi) return sortedVals[lo];
+                const w = idx - lo;
+                return sortedVals[lo] * (1 - w) + sortedVals[hi] * w;
+            }
+
+            // When showing KL/H, a few near-deterministic tokens (tiny entropy)
+            // can create huge outliers. Use a robust max for the color scale.
+            globalMinKL = percentile(allValues, 0.01);
+            globalMaxKL = normalizeByEntropy ? percentile(allValues, 0.99) : allValues[allValues.length - 1];
+            if (!Number.isFinite(globalMinKL)) globalMinKL = 0;
+            if (!Number.isFinite(globalMaxKL)) globalMaxKL = 0;
+        }
+
+        function calculateFileStats(fileData) {
+            if (!fileData.responses || fileData.responses.length === 0) {
+                return { avg: 0, std: 0, responseAvgs: [] };
+            }
+
+            const responseAvgs = [];
+
+            // Calculate average KL for each response
+            fileData.responses.forEach(response => {
+                if (response.token_details && response.token_details.length > 0) {
+                    const klValues = response.token_details.map(token => getDisplayedKL(token));
+                    const avg = klValues.reduce((a, b) => a + b, 0) / klValues.length;
+                    responseAvgs.push(avg);
+                }
+            });
+
+            if (responseAvgs.length === 0) {
+                return { avg: 0, std: 0, responseAvgs: [] };
+            }
+
+            // Calculate overall average
+            const avg = responseAvgs.reduce((a, b) => a + b, 0) / responseAvgs.length;
+
+            // Calculate standard deviation
+            const variance = responseAvgs.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / responseAvgs.length;
+            const std = Math.sqrt(variance);
+
+            return { avg, std, responseAvgs };
+        }
+
         async function loadFiles() {
             clearMessages();
             const directory = document.getElementById('directory-input').value.trim();
+            const runId = ++loadFilesRunId;
 
             if (!directory) {
                 showError('Please enter a directory path');
@@ -372,27 +489,71 @@
                 const response = await fetch(`/api/files?directory=${encodeURIComponent(directory)}`);
                 const data = await response.json();
 
+                if (runId !== loadFilesRunId) return;
+
                 if (!response.ok) {
                     throw new Error(data.error || 'Failed to load files');
                 }
 
                 const fileSelect = document.getElementById('file-select');
-                fileSelect.innerHTML = '<option value="">-- Select a file --</option>';
+                fileSelect.innerHTML = '<option value="">-- Loading and calculating stats...</option>';
 
                 if (data.files.length === 0) {
                     showInfo('No JSON files found in the directory');
+                    fileSelect.innerHTML = '<option value="">-- Select a file --</option>';
                 } else {
-                    data.files.forEach(file => {
+                    // Load all files and calculate stats
+                    const fileStats = [];
+                    const allKLValues = [];
+
+                    for (const file of data.files) {
+                        if (runId !== loadFilesRunId) return;
+                        try {
+                            const fileResponse = await fetch(
+                                `/api/file?directory=${encodeURIComponent(directory)}&filename=${encodeURIComponent(file)}`
+                            );
+                            if (runId !== loadFilesRunId) return;
+                            if (fileResponse.ok) {
+                                const fileData = await fileResponse.json();
+                                if (runId !== loadFilesRunId) return;
+                                const stats = calculateFileStats(fileData);
+                                fileStats.push({
+                                    filename: file,
+                                    avg: stats.avg,
+                                    std: stats.std
+                                });
+                                // Collect KL values for global scale
+                                collectKLValuesFromFile(fileData, allKLValues);
+                            }
+                        } catch (error) {
+                            console.error(`Error loading file ${file}:`, error);
+                        }
+                    }
+
+                    // Compute global min/max across all files
+                    computeGlobalMinMax(allKLValues);
+
+                    // Sort by average KL (descending)
+                    fileStats.sort((a, b) => b.avg - a.avg);
+
+                    // Populate dropdown
+                    if (runId !== loadFilesRunId) return;
+                    fileSelect.innerHTML = '<option value="">-- Select a file --</option>';
+                    fileStats.forEach(fileStat => {
                         const option = document.createElement('option');
-                        option.value = file;
-                        option.textContent = file;
+                        option.value = fileStat.filename;
+                        option.textContent = `${fileStat.filename} (avg: ${fileStat.avg.toFixed(4)}, std: ${fileStat.std.toFixed(4)})`;
                         fileSelect.appendChild(option);
                     });
-                    showInfo(`Found ${data.files.length} file(s)`);
+
+                    showInfo(`Found ${data.files.length} file(s), sorted by average KL divergence. Global scale: ${globalMinKL.toFixed(4)} - ${globalMaxKL.toFixed(4)} (clamped to [${minScore}, ${maxScore}])`);
                 }
             } catch (error) {
+                if (runId !== loadFilesRunId) return;
                 showError(`Error loading files: ${error.message}`);
+                document.getElementById('file-select').innerHTML = '<option value="">-- Select a file --</option>';
             } finally {
+                if (runId !== loadFilesRunId) return;
                 hideLoading();
             }
         }
@@ -401,6 +562,7 @@
             clearMessages();
             const directory = document.getElementById('directory-input').value.trim();
             const filename = document.getElementById('file-select').value;
+            const runId = ++loadFileRunId;
 
             if (!filename) {
                 document.getElementById('content').style.display = 'none';
@@ -414,6 +576,8 @@
                     `/api/file?directory=${encodeURIComponent(directory)}&filename=${encodeURIComponent(filename)}`
                 );
                 const data = await response.json();
+
+                if (runId !== loadFileRunId) return;
 
                 if (!response.ok) {
                     throw new Error(data.error || 'Failed to load file');
@@ -436,28 +600,17 @@
                         responseSelect.appendChild(option);
                     });
 
-                    // Calculate min/max KL for all responses
-                    minKL = Infinity;
-                    maxKL = 0;
-                    data.responses.forEach(resp => {
-                        if (resp.token_details) {
-                            resp.token_details.forEach(token => {
-                                const kl = token.kl_divergence || 0;
-                                minKL = Math.min(minKL, kl);
-                                maxKL = Math.max(maxKL, kl);
-                            });
-                        }
-                    });
-
-                    // Display first response by default
+                    // Display first response by default (uses global scale)
                     displayResponse();
                 } else {
                     showInfo('No responses found in this file');
                 }
 
             } catch (error) {
+                if (runId !== loadFileRunId) return;
                 showError(`Error loading file: ${error.message}`);
             } finally {
+                if (runId !== loadFileRunId) return;
                 hideLoading();
             }
         }
@@ -479,10 +632,20 @@
             // Build token heatmap
             let html = '';
             tokenDetails.forEach(token => {
-                const kl = token.kl_divergence || 0;
-                const color = getKLColor(kl, minKL, maxKL);
+                const displayedKL = getDisplayedKL(token);
+                const color = getKLColor(displayedKL);
                 const tokenText = escapeHtml(token.token || '');
-                html += `<span class="token" style="background-color: ${color};" data-kl="KL: ${kl.toFixed(6)}">${tokenText}</span>`;
+                const rawKL = (token.kl_divergence || 0);
+                const entropy = token.entropy;
+                const didDivide = normalizeByEntropy && rawKL > klThreshold && entropy !== null && entropy !== undefined && entropy > 0;
+                if (didDivide) {
+                    html += `<span class="token" style="background-color: ${color};" data-kl="KL/H: ${displayedKL.toFixed(6)} (KL: ${rawKL.toFixed(6)}, H: ${entropy.toFixed(6)})">${tokenText}</span>`;
+                } else if (normalizeByEntropy) {
+                    const reason = rawKL <= klThreshold ? `KL<=${klThreshold}` : 'H: N/A';
+                    html += `<span class="token" style="background-color: ${color};" data-kl="KL: ${rawKL.toFixed(6)} (${reason})">${tokenText}</span>`;
+                } else {
+                    html += `<span class="token" style="background-color: ${color};" data-kl="KL: ${rawKL.toFixed(6)}">${tokenText}</span>`;
+                }
             });
 
             document.getElementById('token-heatmap').innerHTML = html;
@@ -492,9 +655,8 @@
             const gradientStops = [];
             for (let i = 0; i <= 100; i += 10) {
                 const normalized = i / 100;
-                const klValue = minKL + (normalized * (maxKL - minKL));
                 // For legend, match token opacity
-                if (maxKL === minKL) {
+                if (globalMaxKL === globalMinKL) {
                     gradientStops.push(`rgba(255, 255, 255, 0.7) ${i}%`);
                 } else {
                     const hue = 60 - (normalized * 60);
@@ -505,19 +667,26 @@
             }
             legendGradient.style.background = `linear-gradient(to right, ${gradientStops.join(', ')})`;
 
-            // Update legend labels with actual KL values
-            document.getElementById('legend-min').textContent = minKL.toFixed(6);
-            document.getElementById('legend-max').textContent = maxKL.toFixed(6);
+            // Update legend labels with global KL scale values
+            const scaleNote = `clamped [${minScore}, ${maxScore}]`;
+            document.getElementById('legend-title').textContent = normalizeByEntropy ? `Global KL/H Scale (${scaleNote}; KL>${klThreshold}):` : `Global KL Scale (${scaleNote}):`;
+            document.getElementById('legend-min').textContent = globalMinKL.toFixed(6);
+            document.getElementById('legend-max').textContent = globalMaxKL.toFixed(6);
 
             document.getElementById('legend').style.display = 'block';
 
             // Display metadata
+            const values = tokenDetails.map(t => getDisplayedKL(t));
+            const meanDisplayed = values.length ? (values.reduce((a, b) => a + b, 0) / values.length) : 0;
+            const responseMeanLabel = normalizeByEntropy ? 'Mean KL/H' : 'Mean KL';
+            const rangeLabel = normalizeByEntropy ? 'Global KL/H Range' : 'Global KL Range';
             const metadata = [
                 `Model 1: ${currentData.model1 || 'N/A'}`,
                 `Model 2: ${currentData.model2 || 'N/A'}`,
                 `Total Responses: ${currentData.num_responses || 'N/A'}`,
                 `Response Tokens: ${response.num_tokens || 'N/A'}`,
-                `KL Range: ${minKL.toFixed(6)} - ${maxKL.toFixed(6)}`
+                `${responseMeanLabel}: ${meanDisplayed.toFixed(6)}`,
+                `${rangeLabel}: ${globalMinKL.toFixed(6)} - ${globalMaxKL.toFixed(6)}`
             ].map(item => `<div class="metadata-item">${item}</div>`).join('');
 
             document.getElementById('metadata').innerHTML = metadata;
@@ -531,8 +700,49 @@
 
         // Load files on page load
         window.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('normalize-by-entropy').checked = normalizeByEntropy;
+            document.getElementById('kl-threshold').value = String(klThreshold);
+            document.getElementById('min-score').value = String(minScore);
+            document.getElementById('max-score').value = String(maxScore);
             loadFiles();
         });
+
+        function onNormalizeByEntropyChanged() {
+            normalizeByEntropy = document.getElementById('normalize-by-entropy').checked;
+            loadFilesRunId += 1;
+            loadFiles();
+        }
+
+        function onKLThresholdChanged() {
+            const val = parseFloat(document.getElementById('kl-threshold').value);
+            if (!isNaN(val) && val >= 0) {
+                klThreshold = val;
+            }
+            loadFilesRunId += 1;
+            loadFiles();
+        }
+
+        function onScoreLimitsChanged() {
+            const minVal = parseFloat(document.getElementById('min-score').value);
+            const maxVal = parseFloat(document.getElementById('max-score').value);
+            if (!isNaN(minVal)) {
+                minScore = minVal;
+            }
+            if (!isNaN(maxVal)) {
+                maxScore = maxVal;
+            }
+            // Ensure min <= max
+            if (minScore > maxScore) {
+                const temp = minScore;
+                minScore = maxScore;
+                maxScore = temp;
+                document.getElementById('min-score').value = String(minScore);
+                document.getElementById('max-score').value = String(maxScore);
+            }
+            loadFilesRunId += 1;
+            loadFiles();
+        }
     </script>
 </body>
+
 </html>

@@ -1,0 +1,29 @@
+# Configuration for sampling LLM responses for high KL divergence tokens
+# Takes high_kl_tokens.json as input and samples multiple responses for each entry
+
+# Model to sample from (single model)
+model: "google/gemini-2.5-flash-lite"
+
+# API configuration
+api:
+  base_url: "https://openrouter.ai/api/v1"
+
+# Entry selection
+entries:
+  max_entries: 1          # Maximum number of entries to process (null = all non-infinite entries)
+
+# Sampling parameters
+sampling:
+  num_samples_per_entry: 10  # Number of samples per high KL entry
+  max_tokens: 20            # Maximum tokens to generate per response
+  temperature: 1.0           # Sampling temperature
+  top_p: 1.0                 # Nucleus sampling parameter
+  logprobs: false             # Whether to return log probabilities
+  top_logprobs: 5            # Number of top logprobs to return per token
+  reasoning: true           # Whether to enable reasoning
+  max_retries: 5             # Maximum retry attempts for failed requests
+
+# Output configuration
+output:
+  base_dir: "experiments/results"
+  experiment_name: "high_kl_responses_stable"

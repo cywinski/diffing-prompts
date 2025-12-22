@@ -1,0 +1,36 @@
+# Configuration for LLM judge comparing model responses
+
+# Input directories
+input:
+  # Directory containing Model A responses
+  model_a_dir: "experiments/results/high_kl_responses_preview"
+
+  # Directory containing Model B responses
+  model_b_dir: "experiments/results/high_kl_responses_stable"
+
+# API configuration (optional - will use .env if not specified)
+api:
+  base_url: "https://openrouter.ai/api/v1"  # Use default OpenRouter URL
+  api_key: null   # Will use OPENROUTER_API_KEY from .env
+
+# Judge model configuration
+judge:
+  # Model to use for judging (should be a capable reasoning model)
+  model: "google/gemini-3-flash-preview"
+
+  # Number of hypotheses to generate per pair
+  num_hypotheses: 2
+
+  # Maximum tokens for judge response
+  max_tokens: 2000
+
+  # Temperature for judge model (lower = more consistent)
+  temperature: 0.3
+
+  # Path to prompt template file
+  prompt_template: "src/prompt_templates/judge_template.txt"
+
+# Output configuration
+output:
+  base_dir: "experiments/results"
+  experiment_name: "judge_comparisons"

@@ -1,0 +1,55 @@
+You are an expert AI researcher analyzing differences between two language models' responses to the same prompt.
+
+# Task
+Given the same user prompt and assistant prefill that is shared between models, two different models (Model A and Model B) generated multiple short completions. Your task is to generate {NUM_HYPOTHESES} concise, testable hypotheses about what systematic differences exist between these two models based on their responses.
+
+# Input Data
+
+## User Prompt
+{USER_PROMPT}
+
+## Assistant Prefill
+{ASSISTANT_PREFILL}
+
+## Model A Responses
+{MODEL_A_RESPONSES}
+
+## Model B Responses
+{MODEL_B_RESPONSES}
+
+# Instructions
+
+1. Carefully analyze all responses from both models
+2. Look for patterns in:
+   - Word choice and vocabulary
+   - Sentence structure and length
+   - Formatting preferences (bullets, headers, etc.)
+   - Content focus and emphasis
+   - Tone and style
+   - Level of detail or abstraction
+   - Any other systematic differences
+
+3. Generate {NUM_HYPOTHESES} hypotheses that are:
+   - **Specific**: Focus on observable, measurable differences
+   - **Concise**: Each hypothesis should be 1-2 sentences maximum
+   - **Testable**: Could be verified with additional examples
+   - **Distinct**: Each hypothesis should cover a different aspect
+
+# Output Format
+
+Provide your response as a JSON object with the following structure:
+
+```json
+{
+  "hypotheses": [
+    {
+      "id": 1,
+      "hypothesis": "Your first hypothesis here",
+      "confidence": "high|medium|low",
+    },
+    ...
+  ],
+}
+```
+
+IMPORTANT: Output ONLY the JSON object, with no additional text before or after.

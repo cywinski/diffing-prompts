@@ -32,7 +32,9 @@ class OpenRouterClient:
         """
         self.api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
         if not self.api_key:
-            raise ValueError("API key must be provided or set in OPENROUTER_API_KEY env var")
+            raise ValueError(
+                "API key must be provided or set in OPENROUTER_API_KEY env var"
+            )
 
         self.base_url = base_url
         self.timeout = timeout
@@ -58,6 +60,7 @@ class OpenRouterClient:
         top_logprobs: int = 5,
         seed: Optional[int] = None,
         reasoning: bool = False,
+        assistant_prefill: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Sample a single response from the model.
 
@@ -70,12 +73,19 @@ class OpenRouterClient:
             logprobs: Whether to return log probabilities.
             top_logprobs: Number of top logprobs to return per token.
             seed: Optional seed for deterministic sampling (if supported by model).
+            reasoning: Whether to enable reasoning.
+            assistant_prefill: Optional text to prefill the assistant response.
         Returns:
             Dictionary containing the response and metadata.
         """
+        # Build messages with optional assistant prefill
+        messages = [{"role": "user", "content": prompt}]
+        if assistant_prefill is not None:
+            messages.append({"role": "assistant", "content": assistant_prefill})
+
         payload = {
             "model": model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
             "top_p": top_p,
@@ -172,6 +182,7 @@ class OpenRouterClient:
         top_logprobs: int = 5,
         reasoning: bool = False,
         max_retries: int = 5,
+        assistant_prefill: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Sample multiple responses concurrently for the same prompt with retries.
 
@@ -186,6 +197,7 @@ class OpenRouterClient:
             top_logprobs: Number of top logprobs to return per token.
             reasoning: Whether to enable reasoning.
             max_retries: Maximum number of retry attempts for failed requests.
+            assistant_prefill: Optional text to prefill the assistant response.
         Returns:
             List of response dictionaries.
         """
@@ -206,6 +218,7 @@ class OpenRouterClient:
                     logprobs=logprobs,
                     top_logprobs=top_logprobs,
                     reasoning=reasoning,
+                    assistant_prefill=assistant_prefill,
                 )
                 for _ in range(remaining)
             ]
@@ -226,12 +239,16 @@ class OpenRouterClient:
 
             if remaining > 0:
                 retry_count += 1
-                print(f"Retrying {remaining} failed requests (attempt {retry_count}/{max_retries})...")
+                print(
+                    f"Retrying {remaining} failed requests (attempt {retry_count}/{max_retries})..."
+                )
             else:
                 break
 
         if len(valid_responses) < num_samples:
-            print(f"Warning: Only got {len(valid_responses)}/{num_samples} successful responses after {max_retries} retries")
+            print(
+                f"Warning: Only got {len(valid_responses)}/{num_samples} successful responses after {max_retries} retries"
+            )
 
         return valid_responses
 
@@ -277,7 +294,9 @@ class OpenRouterClient:
         """
         results = []
 
-        for prompt_idx, prompt in enumerate(tqdm(prompts, desc=f"Sampling prompts ({model})", unit="prompt")):
+        for prompt_idx, prompt in enumerate(
+            tqdm(prompts, desc=f"Sampling prompts ({model})", unit="prompt")
+        ):
             # Check if output file already exists
             if skip_existing and output_dir:
                 model_name = model.replace("/", "_").replace(":", "_")
