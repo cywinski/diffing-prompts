@@ -2,7 +2,7 @@
 # Takes high_kl_tokens.json as input and samples multiple responses for each entry
 
 # Model to sample from (single model)
-model: "google/gemini-2.5-flash-lite"
+model: "google/gemini-2.5-flash-lite-preview-09-2025"
 
 # API configuration
 api:
@@ -10,7 +10,7 @@ api:
 
 # Entry selection
 entries:
-  max_entries: 1          # Maximum number of entries to process (null = all non-infinite entries)
+  max_entries: 50          # Maximum number of entries to process (null = all non-infinite entries)
 
 # Sampling parameters
 sampling:
@@ -26,4 +26,4 @@ sampling:
 # Output configuration
 output:
   base_dir: "experiments/results"
-  experiment_name: "high_kl_responses_stable"
+  experiment_name: "high_kl_responses_preview"
