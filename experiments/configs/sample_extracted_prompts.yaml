@@ -1,0 +1,33 @@
+# Configuration for sampling responses from extracted prompts
+
+# Dataset configuration
+dataset:
+  json_path: "extracted_prompts.json"  # Path to JSON file with prompts (array of strings)
+  # prompt_field is not needed when JSON is a direct array of strings
+  num_prompts: 1  # Number of prompts to sample (set to null for all prompts)
+  min_length: null  # Minimum prompt length in characters (null for no minimum)
+  max_length: null  # Maximum prompt length in characters (null for no maximum)
+
+# Models to sample from
+models:
+  - "gemini-2.5-flash-lite-preview-09-2025"
+
+# Sampling parameters
+sampling:
+  num_samples_per_prompt: 5  # Number of samples to generate per prompt
+  max_tokens: 4096  # Maximum tokens to generate
+  temperature: 1.0  # Sampling temperature (higher = more random)
+  top_p: 1.0  # Nucleus sampling parameter
+  logprobs: true  # Whether to return log probabilities
+  top_logprobs: 20  # Number of top logprobs to return per token
+  reasoning: true  # Enable reasoning for supported models
+  max_retries: 5  # Maximum number of retry attempts for failed requests
+
+# API configuration
+api:
+  base_url: "https://openrouter.ai/api/v1"  # Optional: Override API base URL (uses OPENROUTER_BASE_URL from .env if null)
+
+# Output configuration
+output:
+  base_dir: "experiments/results"
+  experiment_name: "extracted_prompts_sampling"

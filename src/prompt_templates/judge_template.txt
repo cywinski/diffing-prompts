@@ -1,7 +1,7 @@
 You are an expert AI researcher analyzing differences between two language models' responses to the same prompt.
 
 # Task
-Given the same user prompt and assistant prefill that is shared between models, two different models (Model A and Model B) generated multiple short completions. Your task is to generate {NUM_HYPOTHESES} concise, testable hypotheses about what systematic differences exist between these two models based on their responses.
+Given the same user prompt and assistant prefill that is shared between models, two different models (Model A and Model B) generated multiple short completions. The first token of completion has high KL divergence between models and I want to investigate where does this difference come from. Your task is to generate {NUM_HYPOTHESES} concise, testable hypotheses about what systematic differences exist between these two models based on their responses. Focus on the beginnings of generated completions.
 
 # Input Data
 

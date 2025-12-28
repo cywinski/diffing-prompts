@@ -271,11 +271,14 @@ class KLDivergenceBatchCalculator:
         print()  # New line after progress updates
         print(f"    ✓ All {total_jobs} batch jobs completed successfully")
 
-    def _download_batch_output(self, output_uri_prefix: str) -> List[Dict[str, Any]]:
+    def _download_batch_output(
+        self, output_uri_prefix: str, save_dir: Optional[Path] = None
+    ) -> List[Dict[str, Any]]:
         """Download and parse batch output from GCS.
 
         Args:
             output_uri_prefix: GCS URI prefix where outputs were written.
+            save_dir: Optional directory to save raw JSONL files.
 
         Returns:
             List of response dictionaries.
@@ -296,11 +299,58 @@ class KLDivergenceBatchCalculator:
                 continue
 
             content = blob.download_as_text()
+
+            # Save raw JSONL if save_dir is provided
+            if save_dir is not None:
+                save_dir.mkdir(parents=True, exist_ok=True)
+                # Use blob name (without bucket prefix) for local filename
+                local_filename = blob.name.replace("/", "_")
+                local_path = save_dir / local_filename
+                with open(local_path, "w") as f:
+                    f.write(content)
+
             for line in content.strip().split("\n"):
                 if line:
                     results.append(json.loads(line))
 
         return results
+
+    def _load_batch_output_from_disk(
+        self, job_prefix: str, raw_jsonl_dir: Path
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Load batch output from saved JSONL files on disk.
+
+        Args:
+            job_prefix: Job prefix used when creating the batch job (e.g., "prompt_0_resp0").
+            raw_jsonl_dir: Directory containing saved JSONL files.
+
+        Returns:
+            List of response dictionaries, or None if no matching files found.
+        """
+        if not raw_jsonl_dir.exists():
+            return None
+
+        # Find all JSONL files matching the job prefix
+        # Files are named like: batch_output_{model}_{job_prefix}_{timestamp}_predictions
+        matching_files = []
+        for file_path in raw_jsonl_dir.glob("*.jsonl"):
+            # Check if filename contains the job prefix
+            if job_prefix in file_path.name:
+                matching_files.append(file_path)
+
+        if not matching_files:
+            return None
+
+        # Parse all matching files
+        results = []
+        for file_path in matching_files:
+            with open(file_path, "r") as f:
+                content = f.read()
+                for line in content.strip().split("\n"):
+                    if line:
+                        results.append(json.loads(line))
+
+        return results if results else None
 
     def _parse_batch_results(
         self,
@@ -470,17 +520,18 @@ class KLDivergenceBatchCalculator:
         return job_info
 
     async def download_and_parse_batch_results(
-        self, job_info: Dict[str, Any]
+        self, job_info: Dict[str, Any], save_dir: Optional[Path] = None
     ) -> List[Dict[str, Any]]:
         """Download and parse batch results.
 
         Args:
             job_info: Job metadata with completed job.
+            save_dir: Optional directory to save raw JSONL files.
 
         Returns:
             List of token dictionaries with logprobs from Model 2.
         """
-        results = self._download_batch_output(job_info["output_uri_prefix"])
+        results = self._download_batch_output(job_info["output_uri_prefix"], save_dir)
         model2_tokens = self._parse_batch_results(
             results,
             job_info["target_tokens"],
@@ -494,6 +545,7 @@ class KLDivergenceBatchCalculator:
         target_tokens: List[Dict[str, Any]],
         top_logprobs: int = 20,
         job_prefix: str = "kl_job",
+        save_dir: Optional[Path] = None,
     ) -> List[Dict[str, Any]]:
         """Get logprobs using batch prediction API.
 
@@ -502,6 +554,7 @@ class KLDivergenceBatchCalculator:
             target_tokens: List of token data from Model 1.
             top_logprobs: Number of top logprobs to return per token.
             job_prefix: Prefix for batch job names.
+            save_dir: Optional directory to save raw JSONL files.
 
         Returns:
             List of token dictionaries with logprobs from Model 2.
@@ -529,7 +582,7 @@ class KLDivergenceBatchCalculator:
 
         # Download results
         print(f"    Downloading results from {output_uri_prefix}")
-        results = self._download_batch_output(output_uri_prefix)
+        results = self._download_batch_output(output_uri_prefix, save_dir)
         print(f"    Downloaded {len(results)} results")
 
         # Parse results
@@ -965,6 +1018,8 @@ async def process_directory(
     top_logprobs: int = 20,
     pattern: str = "*.json",
     max_files: Optional[int] = None,
+    save_raw_jsonl: bool = True,
+    use_cached_raw_jsonl: Optional[str] = None,
 ) -> None:
     """Process all JSON files in a directory using batch prediction.
 
@@ -978,10 +1033,27 @@ async def process_directory(
         top_logprobs: Number of top logprobs to request.
         pattern: Glob pattern for JSON files.
         max_files: Maximum number of files to process (None for all).
+        save_raw_jsonl: Whether to save raw JSONL batch outputs (default: True).
+        use_cached_raw_jsonl: Path to directory with cached raw JSONL files (skips batch jobs).
     """
     input_path = Path(input_dir)
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
+
+    # Determine raw JSONL directory
+    if use_cached_raw_jsonl:
+        raw_jsonl_dir = Path(use_cached_raw_jsonl)
+        if not raw_jsonl_dir.exists():
+            raise ValueError(
+                f"Cached raw JSONL directory does not exist: {use_cached_raw_jsonl}"
+            )
+        print(f"Using cached raw JSONL files from: {raw_jsonl_dir}")
+        use_cache = True
+    else:
+        raw_jsonl_dir = output_path / "raw_batch_outputs" if save_raw_jsonl else None
+        if raw_jsonl_dir:
+            raw_jsonl_dir.mkdir(parents=True, exist_ok=True)
+        use_cache = False
 
     json_files = sorted(input_path.glob(pattern))
 
@@ -1004,7 +1076,10 @@ async def process_directory(
     print(f"Comparing against model: {model2_id}")
     print("Using batch prediction API (concurrent mode - all files)")
     print(f"GCS bucket: {calculator.bucket_name}")
-    print(f"Output directory: {output_dir}\n")
+    print(f"Output directory: {output_dir}")
+    if raw_jsonl_dir:
+        print(f"Raw JSONL outputs will be saved to: {raw_jsonl_dir}")
+    print()
 
     # Step 1: Load all files and prepare all batch jobs
     print("Loading all files and preparing batch jobs...")
@@ -1052,11 +1127,35 @@ async def process_directory(
                     )
                     continue
 
+                response_job_prefix = f"{job_prefix}_resp{i}"
+
+                # If using cached results, check if they exist
+                if use_cache and raw_jsonl_dir:
+                    cached_results = calculator._load_batch_output_from_disk(
+                        response_job_prefix, raw_jsonl_dir
+                    )
+                    if cached_results is not None:
+                        # Store cached results directly - skip job submission
+                        job_info = {
+                            "file_idx": len(file_data_list) - 1,
+                            "response_idx": i,
+                            "text": text,
+                            "model1_logprobs": model1_logprobs,
+                            "num_tokens": len(model1_logprobs),
+                            "cached_results": cached_results,
+                            "target_tokens": model1_logprobs,
+                            "top_logprobs": top_logprobs,
+                            "job_prefix": response_job_prefix,
+                        }
+                        job_infos.append(job_info)
+                        continue
+
+                # Prepare batch job for submission
                 job_info = calculator.prepare_batch_job(
                     prompt=prompt,
                     target_tokens=model1_logprobs,
                     top_logprobs=top_logprobs,
-                    job_prefix=f"{job_prefix}_resp{i}",
+                    job_prefix=response_job_prefix,
                 )
                 job_info["file_idx"] = len(file_data_list) - 1
                 job_info["response_idx"] = i
@@ -1072,45 +1171,60 @@ async def process_directory(
             print(f"Error loading {json_file.name}: {e}")
             continue
 
-    total_requests = sum(j["num_requests"] for j in job_infos)
-    print(
-        f"✓ Prepared {len(job_infos)} batch jobs across {len(file_data_list)} files ({total_requests} total requests)"
-    )
+    # Separate cached jobs from jobs that need submission
+    cached_job_infos = [j for j in job_infos if "cached_results" in j]
+    jobs_to_submit = [j for j in job_infos if "cached_results" not in j]
+
+    if use_cache:
+        print(
+            f"✓ Loaded {len(cached_job_infos)} cached results from disk across {len(file_data_list)} files"
+        )
+        if jobs_to_submit:
+            print(
+                f"  Warning: {len(jobs_to_submit)} responses not found in cache - will submit batch jobs"
+            )
+    else:
+        total_requests = sum(j.get("num_requests", 0) for j in jobs_to_submit)
+        print(
+            f"✓ Prepared {len(jobs_to_submit)} batch jobs across {len(file_data_list)} files ({total_requests} total requests)"
+        )
 
     if not job_infos:
         print("No valid jobs to process")
         return
 
-    # Step 2: Submit all jobs with rate limiting (max 2 requests per second)
-    print("Submitting all batch jobs with rate limiting (max 2 req/s)...")
+    # Step 2: Submit jobs that aren't cached
     valid_job_infos = []
-    delay_between_submissions = 0.5  # 0.5 seconds = 2 requests per second
+    if jobs_to_submit:
+        print("Submitting all batch jobs with rate limiting (max 2 req/s)...")
+        delay_between_submissions = 0.5  # 0.5 seconds = 2 requests per second
 
-    for i, job_info in enumerate(job_infos):
-        try:
-            result = await calculator.submit_batch_job_async(job_info)
-            valid_job_infos.append(result)
-            if (i + 1) % 10 == 0:
-                print(f"  Submitted {i + 1}/{len(job_infos)} jobs...")
-        except Exception as e:
-            file_name = file_data_list[job_info["file_idx"]]["json_file"].name
-            if file_name not in error_results_by_file:
-                error_results_by_file[file_name] = []
-            error_results_by_file[file_name].append(
-                {
-                    "response_idx": job_info["response_idx"],
-                    "text": job_info["text"],
-                    "error": f"Failed to submit batch job: {str(e)}",
-                }
-            )
+        for i, job_info in enumerate(jobs_to_submit):
+            try:
+                result = await calculator.submit_batch_job_async(job_info)
+                valid_job_infos.append(result)
+                if (i + 1) % 10 == 0:
+                    print(f"  Submitted {i + 1}/{len(jobs_to_submit)} jobs...")
+            except Exception as e:
+                file_name = file_data_list[job_info["file_idx"]]["json_file"].name
+                if file_name not in error_results_by_file:
+                    error_results_by_file[file_name] = []
+                error_results_by_file[file_name].append(
+                    {
+                        "response_idx": job_info["response_idx"],
+                        "text": job_info["text"],
+                        "error": f"Failed to submit batch job: {str(e)}",
+                    }
+                )
 
-        # Add delay between submissions (except for the last one)
-        if i < len(job_infos) - 1:
-            await asyncio.sleep(delay_between_submissions)
+            # Add delay between submissions (except for the last one)
+            if i < len(jobs_to_submit) - 1:
+                await asyncio.sleep(delay_between_submissions)
 
-    job_infos = valid_job_infos
+        print(f"✓ Submitted {len(valid_job_infos)} jobs")
 
-    print(f"✓ Submitted {len(job_infos)} jobs")
+    # Combine cached and submitted jobs
+    job_infos = cached_job_infos + valid_job_infos
 
     if not job_infos:
         print("No valid jobs to process")
@@ -1133,45 +1247,80 @@ async def process_directory(
                     json.dump(output_data, f, indent=2)
         return
 
-    # Step 3: Wait for all jobs concurrently with progress updates
-    print("Waiting for all batch jobs to complete...")
-    job_names = [job_info["job_name"] for job_info in job_infos]
-    try:
-        await calculator._wait_for_multiple_jobs(job_names)
-    except Exception as e:
-        print(f"Warning: Error waiting for jobs: {e}")
+    # Step 3: Wait for submitted jobs to complete (skip for cached jobs)
+    if valid_job_infos:
+        print("Waiting for all batch jobs to complete...")
+        job_names = [job_info["job_name"] for job_info in valid_job_infos]
+        try:
+            await calculator._wait_for_multiple_jobs(job_names)
+        except Exception as e:
+            print(f"Warning: Error waiting for jobs: {e}")
 
-    # Step 4: Download and parse all results concurrently
+    # Step 4: Download and parse results
+    # For cached jobs, parse directly from cached_results
+    # For submitted jobs, download from GCS
     print("Downloading and parsing results...")
-    try:
-        model2_logprobs_list = await asyncio.gather(
-            *[
-                calculator.download_and_parse_batch_results(job_info)
-                for job_info in job_infos
-            ],
-            return_exceptions=True,
-        )
-        # Handle exceptions in download/parse
-        valid_results = []
-        for i, result in enumerate(model2_logprobs_list):
-            if isinstance(result, Exception):
-                job_info = job_infos[i]
-                file_name = file_data_list[job_info["file_idx"]]["json_file"].name
-                if file_name not in error_results_by_file:
-                    error_results_by_file[file_name] = []
-                error_results_by_file[file_name].append(
-                    {
-                        "response_idx": job_info["response_idx"],
-                        "text": job_info["text"],
-                        "error": f"Failed to download/parse results: {str(result)}",
-                    }
+    model2_logprobs_list = []
+
+    for job_info in job_infos:
+        if "cached_results" in job_info:
+            # Parse cached results directly
+            try:
+                model2_tokens = calculator._parse_batch_results(
+                    job_info["cached_results"],
+                    job_info["target_tokens"],
+                    job_info["top_logprobs"],
                 )
-            else:
-                valid_results.append((job_infos[i], result))
-        job_info_result_pairs = valid_results
-    except Exception as e:
-        print(f"Error downloading results: {e}")
-        job_info_result_pairs = []
+                model2_logprobs_list.append(model2_tokens)
+            except Exception as e:
+                model2_logprobs_list.append(e)
+        else:
+            # Will be downloaded below
+            model2_logprobs_list.append(None)
+
+    # Download results for submitted jobs
+    if valid_job_infos:
+        try:
+            download_tasks = []
+            download_indices = []
+            for i, job_info in enumerate(job_infos):
+                if "cached_results" not in job_info:
+                    download_tasks.append(
+                        calculator.download_and_parse_batch_results(
+                            job_info, raw_jsonl_dir
+                        )
+                    )
+                    download_indices.append(i)
+
+            downloaded_results = await asyncio.gather(
+                *download_tasks, return_exceptions=True
+            )
+
+            # Update model2_logprobs_list with downloaded results
+            for idx, result in zip(download_indices, downloaded_results):
+                model2_logprobs_list[idx] = result
+
+        except Exception as e:
+            print(f"Error downloading results: {e}")
+
+    # Handle exceptions in download/parse
+    valid_results = []
+    for i, result in enumerate(model2_logprobs_list):
+        if isinstance(result, Exception):
+            job_info = job_infos[i]
+            file_name = file_data_list[job_info["file_idx"]]["json_file"].name
+            if file_name not in error_results_by_file:
+                error_results_by_file[file_name] = []
+            error_results_by_file[file_name].append(
+                {
+                    "response_idx": job_info["response_idx"],
+                    "text": job_info["text"],
+                    "error": f"Failed to download/parse results: {str(result)}",
+                }
+            )
+        elif result is not None:
+            valid_results.append((job_infos[i], result))
+    job_info_result_pairs = valid_results
 
     print(f"✓ Downloaded and parsed {len(job_info_result_pairs)} results")
 
@@ -1311,6 +1460,24 @@ def main():
         default=None,
         help="Maximum number of files to process (default: all)",
     )
+    parser.add_argument(
+        "--save-raw-jsonl",
+        action="store_true",
+        default=True,
+        help="Save raw JSONL batch outputs to disk (default: True)",
+    )
+    parser.add_argument(
+        "--no-save-raw-jsonl",
+        dest="save_raw_jsonl",
+        action="store_false",
+        help="Don't save raw JSONL batch outputs to disk",
+    )
+    parser.add_argument(
+        "--use-cached-raw-jsonl",
+        type=str,
+        default=None,
+        help="Path to directory with cached raw JSONL files (skips batch job submission)",
+    )
 
     args = parser.parse_args()
 
@@ -1325,6 +1492,8 @@ def main():
             top_logprobs=args.top_logprobs,
             pattern=args.pattern,
             max_files=args.max_files,
+            save_raw_jsonl=args.save_raw_jsonl,
+            use_cached_raw_jsonl=args.use_cached_raw_jsonl,
         )
     )
 

@@ -1,0 +1,34 @@
+# Configuration for sampling multiple responses from a single prompt
+
+# The prompt to sample responses for
+prompt: "Write an Angular component that displays a product item with its image, name, and price."
+
+# Model to use
+model: "google/gemini-2.5-flash-lite-preview-09-2025"
+
+# Number of responses to generate
+num_samples: 20
+
+# Maximum tokens per response
+max_tokens: 500
+
+# Sampling temperature (higher = more random)
+temperature: 1.0
+
+# Nucleus sampling parameter
+top_p: 1.0
+
+# Whether to return log probabilities
+logprobs: false
+
+# Number of top logprobs to return per token (requires logprobs: true)
+top_logprobs: 0
+
+# Whether to enable reasoning mode
+reasoning: false
+
+# Maximum number of retry attempts for failed requests
+max_retries: 5
+
+# Output file path
+output_path: "experiments/results/single_prompt_responses_preview.json"

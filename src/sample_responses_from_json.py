@@ -29,7 +29,7 @@ def load_config(config_path: str) -> dict:
 
 def load_prompts_from_json(
     json_path: str,
-    prompt_field: str = "prompt",
+    prompt_field: Optional[str] = None,
     num_samples: Optional[int] = None,
     min_length: Optional[int] = None,
     max_length: Optional[int] = None,
@@ -38,7 +38,7 @@ def load_prompts_from_json(
 
     Args:
         json_path: Path to JSON file containing prompts.
-        prompt_field: Field name containing the prompt text.
+        prompt_field: Field name containing the prompt text. If None, assumes data is a list of strings.
         num_samples: Number of prompts to load. If None, loads all.
         min_length: Minimum prompt length in characters.
         max_length: Maximum prompt length in characters.
@@ -51,28 +51,49 @@ def load_prompts_from_json(
     with open(json_path, "r") as f:
         data = json.load(f)
 
-    # Handle both list of objects and single object
-    if isinstance(data, dict):
-        data = [data]
-
     prompts = []
-    for item in data:
-        if prompt_field not in item:
-            continue
 
-        prompt = item[prompt_field]
+    # Handle direct list of strings
+    if isinstance(data, list) and all(isinstance(item, str) for item in data):
+        for prompt in data:
+            # Apply length filters
+            if min_length and len(prompt) < min_length:
+                continue
+            if max_length and len(prompt) > max_length:
+                continue
 
-        # Apply length filters
-        if min_length and len(prompt) < min_length:
-            continue
-        if max_length and len(prompt) > max_length:
-            continue
+            prompts.append(prompt)
 
-        prompts.append(prompt)
+            # Stop when we have enough prompts
+            if num_samples is not None and len(prompts) >= num_samples:
+                break
+    else:
+        # Handle list of objects or single object
+        if isinstance(data, dict):
+            data = [data]
 
-        # Stop when we have enough prompts
-        if num_samples is not None and len(prompts) >= num_samples:
-            break
+        if prompt_field is None:
+            raise ValueError(
+                "prompt_field must be specified when data is not a list of strings"
+            )
+
+        for item in data:
+            if prompt_field not in item:
+                continue
+
+            prompt = item[prompt_field]
+
+            # Apply length filters
+            if min_length and len(prompt) < min_length:
+                continue
+            if max_length and len(prompt) > max_length:
+                continue
+
+            prompts.append(prompt)
+
+            # Stop when we have enough prompts
+            if num_samples is not None and len(prompts) >= num_samples:
+                break
 
     print(f"Loaded {len(prompts)} prompts from {json_path}")
     return prompts
@@ -110,11 +131,11 @@ async def sample_responses_for_model(
         reasoning: Whether to enable reasoning.
         max_retries: Maximum number of retry attempts for failed requests.
     """
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Sampling responses for model: {model}")
     print(f"Number of prompts: {len(prompts)}")
     print(f"Samples per prompt: {num_samples}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     client = OpenRouterClient(api_key=api_key, base_url=base_url)
 
@@ -165,7 +186,7 @@ async def main():
     dataset_config = config["dataset"]
     prompts = load_prompts_from_json(
         json_path=dataset_config["json_path"],
-        prompt_field=dataset_config.get("prompt_field", "prompt"),
+        prompt_field=dataset_config.get("prompt_field"),
         num_samples=dataset_config.get("num_prompts"),
         min_length=dataset_config.get("min_length"),
         max_length=dataset_config.get("max_length"),
@@ -178,7 +199,9 @@ async def main():
     if args.output_dir:
         output_dir = Path(args.output_dir)
     else:
-        output_dir = Path(config["output"]["base_dir"]) / config['output']['experiment_name']
+        output_dir = (
+            Path(config["output"]["base_dir"]) / config["output"]["experiment_name"]
+        )
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -208,16 +231,16 @@ async def main():
         tasks.append(task)
 
     # Run all model sampling concurrently
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Sampling {len(models)} models concurrently...")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     await asyncio.gather(*tasks)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("✓ All sampling complete!")
     print(f"Results saved to: {output_dir}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
 
 if __name__ == "__main__":

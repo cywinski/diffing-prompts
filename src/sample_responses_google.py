@@ -4,6 +4,7 @@
 import argparse
 import asyncio
 import functools
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -64,6 +65,85 @@ def load_config(config_path: str) -> dict:
     return config
 
 
+def load_prompts_from_json(
+    json_path: str,
+    prompt_field: Optional[str] = None,
+    num_samples: Optional[int] = None,
+    min_length: Optional[int] = None,
+    max_length: Optional[int] = None,
+    seed: Optional[int] = None,
+    sampling_mode: str = "first",
+) -> list[str]:
+    """Load prompts from a JSON file.
+
+    Args:
+        json_path: Path to JSON file containing prompts.
+        prompt_field: Field name containing the prompt text. If None, assumes data is a list of strings.
+        num_samples: Number of prompts to load. If None, loads all.
+        min_length: Minimum prompt length in characters.
+        max_length: Maximum prompt length in characters.
+        seed: Random seed for reproducibility when sampling_mode is "random".
+        sampling_mode: How to sample prompts - "first" (take first N) or "random" (random N).
+
+    Returns:
+        List of prompt strings.
+    """
+    import random
+
+    print(f"Loading prompts from: {json_path}")
+
+    with open(json_path, "r") as f:
+        data = json.load(f)
+
+    prompts = []
+
+    # Handle direct list of strings
+    if isinstance(data, list) and all(isinstance(item, str) for item in data):
+        for prompt in data:
+            # Apply length filters
+            if min_length and len(prompt) < min_length:
+                continue
+            if max_length and len(prompt) > max_length:
+                continue
+
+            prompts.append(prompt)
+    else:
+        # Handle list of objects or single object
+        if isinstance(data, dict):
+            data = [data]
+
+        if prompt_field is None:
+            raise ValueError(
+                "prompt_field must be specified when data is not a list of strings"
+            )
+
+        for item in data:
+            if prompt_field not in item:
+                continue
+
+            prompt = item[prompt_field]
+
+            # Apply length filters
+            if min_length and len(prompt) < min_length:
+                continue
+            if max_length and len(prompt) > max_length:
+                continue
+
+            prompts.append(prompt)
+
+    # Apply sampling strategy
+    if num_samples is not None and num_samples < len(prompts):
+        if sampling_mode == "random":
+            if seed is not None:
+                random.seed(seed)
+            prompts = random.sample(prompts, num_samples)
+        else:  # "first"
+            prompts = prompts[:num_samples]
+
+    print(f"Loaded {len(prompts)} prompts from {json_path}")
+    return prompts
+
+
 async def sample_responses_for_model(
     prompts: list[str],
     model: str,
@@ -102,7 +182,9 @@ async def sample_responses_for_model(
 
     client = GoogleClient(project_id=project_id, location=location)
     # Limit outbound requests to 2 per second (shared across all concurrent tasks).
-    client.sample_response = rate_limit_async(AsyncRateLimiter(2), client.sample_response)
+    client.sample_response = rate_limit_async(
+        AsyncRateLimiter(2), client.sample_response
+    )
 
     samples = await client.sample_prompts_batch(
         prompts=prompts,
@@ -150,7 +232,17 @@ async def main():
     dataset_config = config["dataset"]
     source = dataset_config["source"]
 
-    if source == "huggingface":
+    if source == "json":
+        prompts = load_prompts_from_json(
+            json_path=dataset_config["json_path"],
+            prompt_field=dataset_config.get("prompt_field"),
+            num_samples=dataset_config.get("num_prompts"),
+            min_length=dataset_config.get("min_length"),
+            max_length=dataset_config.get("max_length"),
+            seed=dataset_config.get("seed"),
+            sampling_mode=dataset_config.get("sampling_mode", "first"),
+        )
+    elif source == "huggingface":
         # Build filter function if language is specified
         filter_fn = None
         language = dataset_config.get("language")

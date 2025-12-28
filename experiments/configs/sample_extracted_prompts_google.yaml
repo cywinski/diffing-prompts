@@ -1,27 +1,20 @@
 # Configuration for sampling LLM responses via Google Gemini API
-# Experiment: Find maximally different responses between two models
+# Experiment: Sample responses from extracted WildChat prompts
 
 # Dataset configuration
 dataset:
-  source: "huggingface"           # Options: "huggingface", "file", "json"
-  dataset_name: "allenai/WildChat"  # HuggingFace dataset identifier
-  split: "train"                  # Dataset split
-  num_prompts: 1                # Number of prompts to sample
+  source: "json"                  # Use JSON file as source
+  json_path: "extracted_prompts.json"  # Path to JSON file with prompts (array of strings)
+  num_prompts: null                 # Number of prompts to sample
   seed: 42                        # Random seed for reproducibility
   sampling_mode: "random"         # How to sample prompts: "first" (take first N) or "random" (random N)
 
   # Prompt extraction
-  use_wildchat_format: true       # Use special WildChat conversation extractor
-  # prompt_field: "text"          # Field name if not using custom extractor
+  # prompt_field is not needed when JSON is a direct array of strings
 
   # Optional filters
   min_length: 1                   # Minimum prompt length in characters
-  max_length: 1000                # Maximum prompt length in characters
-  language: "English"             # Language code (for WildChat)
-
-  # For file source (uncomment if using)
-  # source: "file"
-  # file_path: "data/prompts.txt"
+  max_length: null                # Maximum prompt length in characters (null for no limit)
 
 # Models to sample from (list of arbitrary length)
 # Model IDs from Google Gemini: https://cloud.google.com/vertex-ai/docs/generative-ai/learn/models
@@ -38,15 +31,15 @@ api:
 
 # Sampling parameters
 sampling:
-  num_samples_per_prompt: 1       # Number of samples per prompt per model
-  max_tokens: 20                # Maximum tokens to generate
+  num_samples_per_prompt: 5       # Number of samples per prompt per model
+  max_tokens: 4096                # Maximum tokens to generate
   temperature: 1.0                # Sampling temperature
   top_p: 1.0                      # Nucleus sampling parameter
   response_logprobs: true         # Whether to return log probabilities
-  logprobs: 20                     # Number of top logprobs to return per token (1-20)
+  logprobs: 20                    # Number of top logprobs to return per token (1-20)
   max_retries: 5                  # Maximum retry attempts for failed requests
 
 # Output configuration
 output:
-  base_dir: "experiments/results"
-  experiment_name: "gemini-2.5-flash-lite-preview-09-2025-mini-exp"
+  base_dir: "experiments/results_final"
+  experiment_name: "responses_gemini-2.5-flash-lite-preview-09-2025"

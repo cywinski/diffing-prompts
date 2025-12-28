@@ -1,3 +1,4 @@
+*.jsonl
 google-cloud-sdk/
 plots/
 *.pt
