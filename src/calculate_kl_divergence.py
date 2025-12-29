@@ -139,9 +139,6 @@ class KLDivergenceCalculator:
                 if token_data["logprob"] is None:
                     min_logprob = min(alt.log_probability for alt in top_alternatives)
                     token_data["logprob"] = min_logprob
-                    print(
-                        f"    Warning: M1 token '{target_token_data['token']}' not in M2's top {top_logprobs} at position {position}, using floor"
-                    )
 
             return token_data
         else:
@@ -153,19 +150,23 @@ class KLDivergenceCalculator:
         target_tokens: List[Dict[str, Any]],
         top_logprobs: int = 20,
         max_concurrent: int = 10,
+        rate_limit: Optional[float] = None,
+        max_retries: int = 5,
     ) -> List[Dict[str, Any]]:
         """Get logprobs by prefilling with Model 1's tokens in parallel batches.
 
         API doesn't return logprobs for prefilled text, so we prefill
         iteratively with Model 1's tokens and collect Model 2's probability
         distribution at each position. Processes multiple positions in parallel
-        for speed.
+        for speed. Retries failed requests automatically.
 
         Args:
             prompt: User prompt.
             target_tokens: List of token data from Model 1 (with "token" field).
             top_logprobs: Number of top logprobs to return per token.
             max_concurrent: Maximum number of concurrent API calls.
+            rate_limit: Optional rate limit in requests per second.
+            max_retries: Maximum number of retries for failed requests.
 
         Returns:
             List of token dictionaries with logprobs from Model 2.
@@ -179,11 +180,81 @@ class KLDivergenceCalculator:
         # Create semaphore to limit concurrent requests
         semaphore = asyncio.Semaphore(max_concurrent)
 
+        # Rate limiting: track last request time
+        last_request_time = [0.0] if rate_limit else None
+        rate_limit_lock = asyncio.Lock() if rate_limit else None
+
         async def get_with_semaphore(position):
             async with semaphore:
-                return await self._get_logprobs_for_position(
-                    prompt, target_tokens, position, config, top_logprobs
-                )
+                for retry in range(max_retries):
+                    # Apply rate limiting if specified
+                    if rate_limit and rate_limit_lock:
+                        async with rate_limit_lock:
+                            current_time = asyncio.get_event_loop().time()
+                            time_since_last = current_time - last_request_time[0]
+                            min_interval = 1.0 / rate_limit
+                            if time_since_last < min_interval:
+                                await asyncio.sleep(min_interval - time_since_last)
+                            last_request_time[0] = asyncio.get_event_loop().time()
+
+                    try:
+                        result = await self._get_logprobs_for_position(
+                            prompt, target_tokens, position, config, top_logprobs
+                        )
+
+                        # Check if result has valid logprobs
+                        if (
+                            result.get("top_logprobs")
+                            and result.get("logprob") is not None
+                        ):
+                            return result
+
+                        # Invalid result, retry
+                        if retry < max_retries - 1:
+                            print(
+                                f"    Position {position}: Invalid logprobs, retrying ({retry + 1}/{max_retries})..."
+                            )
+                            await asyncio.sleep(0.5)  # Small delay before retry
+                        else:
+                            print(
+                                f"    Position {position}: Failed after {max_retries} retries"
+                            )
+                            return {
+                                "token": target_tokens[position]["token"],
+                                "logprob": None,
+                                "token_id": target_tokens[position].get("token_id"),
+                                "top_logprobs": [],
+                                "position": position,
+                                "error": "Failed to get valid logprobs after retries",
+                            }
+                    except Exception as e:
+                        if retry < max_retries - 1:
+                            print(
+                                f"    Position {position}: Error, retrying ({retry + 1}/{max_retries}): {str(e)}"
+                            )
+                            await asyncio.sleep(0.5)  # Small delay before retry
+                        else:
+                            print(
+                                f"    Position {position}: Failed after {max_retries} retries: {str(e)}"
+                            )
+                            return {
+                                "token": target_tokens[position]["token"],
+                                "logprob": None,
+                                "token_id": target_tokens[position].get("token_id"),
+                                "top_logprobs": [],
+                                "position": position,
+                                "error": str(e),
+                            }
+
+                # Should not reach here, but return error just in case
+                return {
+                    "token": target_tokens[position]["token"],
+                    "logprob": None,
+                    "token_id": target_tokens[position].get("token_id"),
+                    "top_logprobs": [],
+                    "position": position,
+                    "error": "Unknown error after retries",
+                }
 
         # Create tasks for all positions
         tasks = [get_with_semaphore(i) for i in range(len(target_tokens))]
@@ -192,29 +263,28 @@ class KLDivergenceCalculator:
         print(
             f"    Processing {len(target_tokens)} tokens with max {max_concurrent} concurrent requests..."
         )
-        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Check for errors and sort by position
+        # Track progress with tqdm
         model2_tokens = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                print(f"    Error at position {i}: {result}")
-                # Create error entry with None logprob
-                model2_tokens.append(
-                    {
-                        "token": target_tokens[i]["token"],
-                        "logprob": None,
-                        "token_id": target_tokens[i].get("token_id"),
-                        "top_logprobs": [],
-                        "position": i,
-                        "error": str(result),
-                    }
-                )
-            else:
+        with tqdm(total=len(target_tokens), desc="    Tokens", leave=False) as pbar:
+            for coro in asyncio.as_completed(tasks):
+                result = await coro
+                if "error" in result:
+                    print(
+                        f"    Error at position {result['position']}: {result['error']}"
+                    )
                 model2_tokens.append(result)
+                pbar.update(1)
 
         # Sort by position to ensure correct order
         model2_tokens.sort(key=lambda x: x["position"])
+
+        # Check for any errors
+        errors = [t for t in model2_tokens if "error" in t]
+        if errors:
+            print(
+                f"    Warning: {len(errors)} tokens failed to get valid logprobs after retries"
+            )
 
         # Remove position field (was only for sorting)
         for token in model2_tokens:
@@ -267,7 +337,9 @@ class KLDivergenceCalculator:
             kl_div = self._calculate_kl_divergence(model1_dist, model2_dist)
             kl_divergences.append(kl_div)
 
-            entropy = self._calculate_entropy_from_top_logprobs(model1_top)
+            # Calculate entropy for both models
+            entropy1 = self._calculate_entropy_from_top_logprobs(model1_top)
+            entropy2 = self._calculate_entropy_from_top_logprobs(model2_top)
 
             # Store token details
             token_details.append(
@@ -275,7 +347,8 @@ class KLDivergenceCalculator:
                     "position": i,
                     "token": token1_data["token"],
                     "kl_divergence": kl_div,
-                    "entropy": entropy,
+                    "entropy1": entropy1,
+                    "entropy2": entropy2,
                     "model1_chosen_logprob": token1_data.get("logprob"),
                     "model2_chosen_logprob": token2_data.get("logprob"),
                 }
@@ -397,6 +470,8 @@ class KLDivergenceCalculator:
         response_idx: Optional[int] = None,
         max_concurrent: int = 10,
         model1_calculator: Optional["KLDivergenceCalculator"] = None,
+        rate_limit: Optional[float] = None,
+        max_retries: int = 5,
     ) -> Dict[str, Any]:
         """Process a single response to calculate KL divergence.
 
@@ -407,6 +482,8 @@ class KLDivergenceCalculator:
             response_idx: Optional response index for progress messages.
             max_concurrent: Maximum number of concurrent API calls.
             model1_calculator: Optional calculator for model 1 to resample logprobs.
+            rate_limit: Optional rate limit in requests per second.
+            max_retries: Maximum number of retries for failed API calls.
 
         Returns:
             Dictionary with KL divergence results.
@@ -436,7 +513,7 @@ class KLDivergenceCalculator:
                 print(
                     f"  Processing response {response_idx + 1}: {len(model1_logprobs)} tokens"
                 )
-                print(f"    Resampling logprobs from model 1...")
+                print("    Resampling logprobs from model 1...")
 
             # Resample logprobs from model 1
             try:
@@ -445,6 +522,8 @@ class KLDivergenceCalculator:
                     target_tokens=model1_logprobs,
                     top_logprobs=top_logprobs,
                     max_concurrent=max_concurrent,
+                    rate_limit=rate_limit,
+                    max_retries=max_retries,
                 )
             except Exception as e:
                 return {
@@ -474,6 +553,8 @@ class KLDivergenceCalculator:
                 target_tokens=model1_logprobs,
                 top_logprobs=top_logprobs,
                 max_concurrent=max_concurrent,
+                rate_limit=rate_limit,
+                max_retries=max_retries,
             )
         except Exception as e:
             return {
@@ -494,6 +575,25 @@ class KLDivergenceCalculator:
                 "error": f"Failed to calculate KL divergence: {str(e)}",
                 "model1_tokens": len(model1_logprobs),
                 "model2_tokens": len(model2_logprobs),
+            }
+
+        # Check for infinity values (indicates sampling errors that persisted after retries)
+        inf_positions = [i for i, kl in enumerate(kl_divergences) if math.isinf(kl)]
+        if inf_positions:
+            failed_tokens = [
+                (i, model1_logprobs[i]["token"]) for i in inf_positions[:10]
+            ]
+            error_msg = f"KL divergence contains {len(inf_positions)} infinity values. Failed tokens: {failed_tokens}"
+            if len(inf_positions) > 10:
+                error_msg += f"... and {len(inf_positions) - 10} more"
+            print(f"    Error: {error_msg}")
+            return {
+                "response_idx": response_idx,
+                "text": text,
+                "error": error_msg,
+                "model1_tokens": len(model1_logprobs),
+                "model2_tokens": len(model2_logprobs),
+                "failed_positions": inf_positions,
             }
 
         # Calculate statistics
@@ -526,6 +626,8 @@ async def process_json_file(
     top_logprobs: int = 20,
     max_concurrent: int = 10,
     model1_calculator: Optional[KLDivergenceCalculator] = None,
+    rate_limit: Optional[float] = None,
+    max_retries: int = 5,
 ) -> None:
     """Process a single JSON file to calculate KL divergences.
 
@@ -536,6 +638,8 @@ async def process_json_file(
         top_logprobs: Number of top logprobs to request.
         max_concurrent: Maximum number of concurrent API calls per response.
         model1_calculator: Optional calculator for model 1 to resample logprobs.
+        rate_limit: Optional rate limit in requests per second.
+        max_retries: Maximum number of retries for failed API calls.
     """
     # Load JSON file
     with open(json_path, "r") as f:
@@ -560,6 +664,8 @@ async def process_json_file(
             response_idx=i,
             max_concurrent=max_concurrent,
             model1_calculator=model1_calculator,
+            rate_limit=rate_limit,
+            max_retries=max_retries,
         )
         results.append(result)
 
@@ -597,6 +703,8 @@ async def process_directory(
     max_concurrent: int = 10,
     max_files: Optional[int] = None,
     model1_id: Optional[str] = None,
+    rate_limit: Optional[float] = None,
+    max_retries: int = 5,
 ) -> None:
     """Process all JSON files in a directory to calculate KL divergences.
 
@@ -611,6 +719,8 @@ async def process_directory(
         max_concurrent: Maximum number of concurrent API calls per response.
         max_files: Maximum number of files to process (None for all).
         model1_id: Optional model identifier to resample model 1 logprobs.
+        rate_limit: Optional rate limit in requests per second.
+        max_retries: Maximum number of retries for failed API calls.
     """
     input_path = Path(input_dir)
     output_path = Path(output_dir)
@@ -646,9 +756,12 @@ async def process_directory(
         print(f"Model 1 (resampling): {model1_id}")
         print(f"Model 2 (comparison): {model2_id}")
     else:
-        print(f"Model 1: from JSON files")
+        print("Model 1: from JSON files")
         print(f"Model 2 (comparison): {model2_id}")
 
+    if rate_limit:
+        print(f"Rate limit: {rate_limit} requests/second")
+    print(f"Max retries: {max_retries}")
     print(f"Output directory: {output_dir}\n")
 
     # Process each file
@@ -661,6 +774,8 @@ async def process_directory(
                 top_logprobs=top_logprobs,
                 max_concurrent=max_concurrent,
                 model1_calculator=model1_calculator,
+                rate_limit=rate_limit,
+                max_retries=max_retries,
             )
         except Exception as e:
             print(f"Error processing {json_file.name}: {e}")
@@ -731,6 +846,18 @@ def main():
         help="Maximum number of concurrent API calls per response (default: 10)",
     )
     parser.add_argument(
+        "--rate-limit",
+        type=float,
+        default=None,
+        help="Rate limit in requests per second (default: no limit)",
+    )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=5,
+        help="Maximum number of retries for failed API calls (default: 5)",
+    )
+    parser.add_argument(
         "--max-files",
         type=int,
         default=None,
@@ -751,6 +878,8 @@ def main():
             max_concurrent=args.max_concurrent,
             max_files=args.max_files,
             model1_id=args.model1,
+            rate_limit=args.rate_limit,
+            max_retries=args.max_retries,
         )
     )
 
