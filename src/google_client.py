@@ -139,7 +139,6 @@ class GoogleClient:
                 token_data = {
                     "token": chosen_candidate.token,
                     "logprob": chosen_candidate.log_probability,
-                    "token_id": chosen_candidate.token_id,
                 }
 
                 # Add top alternatives if available
@@ -149,7 +148,6 @@ class GoogleClient:
                         {
                             "token": alt.token,
                             "logprob": alt.log_probability,
-                            "token_id": alt.token_id,
                         }
                         for alt in top_alternatives
                     ]

@@ -6,7 +6,7 @@ dataset:
   source: "huggingface"           # Options: "huggingface", "file"
   dataset_name: "allenai/WildChat"  # HuggingFace dataset identifier
   split: "train"                  # Dataset split
-  num_prompts: 200            # Number of prompts to sample
+  num_prompts: 1            # Number of prompts to sample
   seed: 42                        # Random seed for reproducibility
   sampling_mode: "random"          # How to sample prompts: "first" (take first N) or "random" (random N)
 
@@ -26,7 +26,7 @@ dataset:
 # Models to sample from (list of arbitrary length)
 # Model IDs from OpenRouter: https://openrouter.ai/models
 models:
-  - "meta-llama/llama-3.1-8b-instruct"
+  - "openai/gpt-4o-mini-2024-07-18"
   # - "deepseek/deepseek-chat"
   # - "cloud"
   # Add more models as needed:
@@ -36,19 +36,24 @@ models:
 api:
   # base_url: "https://48a2sytfam5f6y-8000.proxy.runpod.net/v1" # OpenRouter API base URL
   base_url: "https://openrouter.ai/api/v1" # OpenRouter API base URL
+
+  # Provider configuration (optional)
+  # Specify specific providers to use for the request
+  provider:
+    only: ["openai"]  # Example: only use OpenAI provider
 # Sampling parameters
 sampling:
-  num_samples_per_prompt: 5  # Number of samples per prompt per model
-  max_tokens: 16384            # Maximum tokens to generate
+  num_samples_per_prompt: 1  # Number of samples per prompt per model
+  max_tokens: 50            # Maximum tokens to generate
   temperature: 1.0           # Sampling temperature
   top_p: 1.0                 # Nucleus sampling parameter
-  logprobs: false            # Whether to return log probabilities
-  top_logprobs: 0            # Number of top logprobs to return per token
+  logprobs: true            # Whether to return log probabilities
+  top_logprobs: 20            # Number of top logprobs to return per token
   max_tokens_reasoning: 0            # Maximum tokens to generate for reasoning
   reasoning: false            # Whether to enable reasoning
   max_retries: 5             # Maximum retry attempts for failed requests
 
 # Output configuration
 output:
-  base_dir: "experiments/results"
+  base_dir: "experiments/test_results_GPT-4o-mini/gpt-4o-mini-2024-07-18"
   experiment_name: "sample_responses"

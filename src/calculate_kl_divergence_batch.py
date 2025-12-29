@@ -627,7 +627,8 @@ class KLDivergenceBatchCalculator:
             kl_div = self._calculate_kl_divergence(model1_dist, model2_dist)
             kl_divergences.append(kl_div)
 
-            entropy = self._calculate_entropy_from_top_logprobs(model1_top)
+            entropy1 = self._calculate_entropy_from_top_logprobs(model1_top)
+            entropy2 = self._calculate_entropy_from_top_logprobs(model2_top)
 
             # Store token details
             token_details.append(
@@ -635,7 +636,8 @@ class KLDivergenceBatchCalculator:
                     "position": i,
                     "token": token1_data["token"],
                     "kl_divergence": kl_div,
-                    "entropy": entropy,
+                    "entropy1": entropy1,
+                    "entropy2": entropy2,
                     "model1_chosen_logprob": token1_data.get("logprob"),
                     "model2_chosen_logprob": token2_data.get("logprob"),
                 }

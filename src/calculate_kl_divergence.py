@@ -415,8 +415,9 @@ class KLDivergenceCalculator:
 
         if not text or not model1_logprobs:
             return {
-                "error": "Missing text or logprobs in response data",
+                "response_idx": response_idx,
                 "text": text,
+                "error": "Missing text or logprobs in response data",
             }
 
         # Show progress
@@ -435,8 +436,9 @@ class KLDivergenceCalculator:
             )
         except Exception as e:
             return {
-                "error": f"Failed to get model 2 logprobs: {str(e)}",
+                "response_idx": response_idx,
                 "text": text,
+                "error": f"Failed to get model 2 logprobs: {str(e)}",
             }
 
         # Calculate KL divergence per token
@@ -446,8 +448,9 @@ class KLDivergenceCalculator:
             )
         except Exception as e:
             return {
-                "error": f"Failed to calculate KL divergence: {str(e)}",
+                "response_idx": response_idx,
                 "text": text,
+                "error": f"Failed to calculate KL divergence: {str(e)}",
                 "model1_tokens": len(model1_logprobs),
                 "model2_tokens": len(model2_logprobs),
             }
@@ -455,6 +458,7 @@ class KLDivergenceCalculator:
         # Calculate statistics
         kl_array = np.array(kl_divergences)
         result = {
+            "response_idx": response_idx,
             "text": text,
             "num_tokens": len(kl_divergences),
             "kl_per_token": kl_divergences,
@@ -512,6 +516,9 @@ async def process_json_file(
             max_concurrent=max_concurrent,
         )
         results.append(result)
+
+    # Sort results by response_idx to maintain order
+    results.sort(key=lambda x: x.get("response_idx", -1))
 
     # Save results
     output_data = {

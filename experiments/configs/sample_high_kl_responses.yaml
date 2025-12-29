@@ -10,7 +10,7 @@ api:
 
 # Entry selection
 entries:
-  max_entries: 50          # Maximum number of entries to process (null = all non-infinite entries)
+  max_entries: null          # Maximum number of entries to process (null = all non-infinite entries)
 
 # Sampling parameters
 sampling:
@@ -25,5 +25,5 @@ sampling:
 
 # Output configuration
 output:
-  base_dir: "experiments/results"
+  base_dir: "experiments/results_final"
   experiment_name: "high_kl_responses_stable"

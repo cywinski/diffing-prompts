@@ -1,7 +1,13 @@
 You are an expert AI researcher analyzing differences between two language models' responses to the same prompt.
 
 # Task
-Given the same user prompt and assistant prefill that is shared between models, two different models (Model A and Model B) generated multiple short completions. The first token of completion has high KL divergence between models and I want to investigate where does this difference come from. Your task is to generate {NUM_HYPOTHESES} concise, testable hypotheses about what systematic differences exist between these two models based on their responses. Focus on the beginnings of generated completions.
+Given the same user prompt and assistant prefill that is shared between models, two different models (Model A and Model B) generated multiple short completions. The first token of completion has high KL divergence between models and I want to investigate where does this difference come from. Your task is to generate {NUM_HYPOTHESES} concise, testable hypotheses about systematic behaviors observed in these models based on their responses.
+
+**Important**:
+- Each hypothesis must describe the behavior of ONE model only. Do not create comparative hypotheses that contrast both models in a single statement. If you observe a contrasting behavior, create two separate hypotheses—one for each model.
+- Hypotheses should be **general behavioral tendencies**, not descriptions of what happened in these specific examples. Use the provided responses as evidence to infer broader patterns that would apply to other prompts as well.
+- Hypotheses should describe the model's general behavior, **not reference the experimental setup**. Avoid phrases like "at the start of completions," "following a prefill," etc.
+- Consider the user prompt and prefilled response to determine appropriate **context scoping**. If the observed behavior likely only applies in certain contexts, include that context in the hypothesis. If it seems like a general tendency, state it broadly.
 
 # Input Data
 
@@ -20,16 +26,13 @@ Given the same user prompt and assistant prefill that is shared between models, 
 # Instructions
 
 1. Carefully analyze all responses from both models
-2. Look for patterns in:
-   - Word choice and vocabulary
-   - Sentence structure and length
-   - Formatting preferences (bullets, headers, etc.)
-   - Content focus and emphasis
-   - Tone and style
-   - Level of detail or abstraction
-   - Any other systematic differences
+2. Consider the user prompt and prefill to understand the context and appropriately scope your hypotheses
 
 3. Generate {NUM_HYPOTHESES} hypotheses that are:
+   - **Single-model**: Each hypothesis describes behavior of exactly ONE model, never both
+   - **General**: Describe broad behavioral tendencies, not specific observations from these examples
+   - **Appropriately scoped**: Include relevant context if the behavior likely only applies in certain situations; omit context if it appears to be a general tendency
+   - **Context-independent of setup**: Do not reference "completions," "prefills," "continuations," or other aspects of this experimental setup
    - **Specific**: Focus on observable, measurable differences
    - **Concise**: Each hypothesis should be 1-2 sentences maximum
    - **Testable**: Could be verified with additional examples
@@ -38,18 +41,4 @@ Given the same user prompt and assistant prefill that is shared between models, 
 # Output Format
 
 Provide your response as a JSON object with the following structure:
-
 ```json
-{
-  "hypotheses": [
-    {
-      "id": 1,
-      "hypothesis": "Your first hypothesis here",
-      "confidence": "high|medium|low",
-    },
-    ...
-  ],
-}
-```
-
-IMPORTANT: Output ONLY the JSON object, with no additional text before or after.

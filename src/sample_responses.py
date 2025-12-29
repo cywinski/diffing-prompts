@@ -46,6 +46,7 @@ async def sample_responses_for_model(
     base_url: Optional[str] = None,
     reasoning: bool = False,
     max_retries: int = 5,
+    provider: Optional[dict] = None,
 ) -> None:
     """Sample responses for a single model.
 
@@ -63,6 +64,7 @@ async def sample_responses_for_model(
         base_url: Optional API base URL override.
         reasoning: Whether to enable reasoning.
         max_retries: Maximum number of retry attempts for failed requests.
+        provider: Optional provider configuration (e.g., {"only": ["provider_name"]}).
     """
     print(f"\n{'=' * 60}")
     print(f"Sampling responses for model: {model}")
@@ -84,6 +86,7 @@ async def sample_responses_for_model(
         reasoning=reasoning,
         output_dir=output_dir,
         max_retries=max_retries,
+        provider=provider,
     )
 
     print(f"✓ Completed sampling for {model}")
@@ -177,6 +180,7 @@ async def main():
     models = config["models"]
     api_config = config.get("api", {})
     base_url = api_config.get("base_url")
+    provider = api_config.get("provider")
 
     # Create tasks for all models to run concurrently
     tasks = []
@@ -194,6 +198,7 @@ async def main():
             base_url=base_url,
             reasoning=sampling_config["reasoning"],
             max_retries=sampling_config.get("max_retries", 5),
+            provider=provider,
         )
         tasks.append(task)
 

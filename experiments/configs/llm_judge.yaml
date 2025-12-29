@@ -3,10 +3,10 @@
 # Input directories
 input:
   # Directory containing Model A responses
-  model_a_dir: "experiments/results/high_kl_responses_preview"
+  model_a_dir: "experiments/results_final/high_kl_responses_preview"
 
   # Directory containing Model B responses
-  model_b_dir: "experiments/results/high_kl_responses_stable"
+  model_b_dir: "experiments/results_final/high_kl_responses_stable"
 
 # API configuration (optional - will use .env if not specified)
 api:
@@ -16,10 +16,10 @@ api:
 # Judge model configuration
 judge:
   # Model to use for judging (should be a capable reasoning model)
-  model: "google/gemini-3-flash-preview"
+  model: "google/gemini-2.5-flash"
 
   # Number of hypotheses to generate per pair
-  num_hypotheses: 2
+  num_hypotheses: 6
 
   # Maximum tokens for judge response
   max_tokens: 2000
@@ -32,5 +32,5 @@ judge:
 
 # Output configuration
 output:
-  base_dir: "experiments/results"
+  base_dir: "experiments/results_final"
   experiment_name: "judge_comparisons"

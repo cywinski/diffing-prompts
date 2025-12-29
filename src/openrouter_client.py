@@ -61,6 +61,7 @@ class OpenRouterClient:
         seed: Optional[int] = None,
         reasoning: bool = False,
         assistant_prefill: Optional[str] = None,
+        provider: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Sample a single response from the model.
 
@@ -75,6 +76,7 @@ class OpenRouterClient:
             seed: Optional seed for deterministic sampling (if supported by model).
             reasoning: Whether to enable reasoning.
             assistant_prefill: Optional text to prefill the assistant response.
+            provider: Optional provider configuration (e.g., {"only": ["provider_name"]}).
         Returns:
             Dictionary containing the response and metadata.
         """
@@ -103,6 +105,10 @@ class OpenRouterClient:
         if seed is not None:
             payload["seed"] = seed
 
+        # Add provider if provided
+        if provider is not None:
+            payload["provider"] = provider
+
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
                 f"{self.base_url}/chat/completions",
@@ -123,6 +129,7 @@ class OpenRouterClient:
         top_logprobs: int = 0,
         seed: Optional[int] = None,
         reasoning: bool = False,
+        provider: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Sample a single response from the model (synchronous version).
 
@@ -135,6 +142,7 @@ class OpenRouterClient:
             logprobs: Whether to return log probabilities.
             top_logprobs: Number of top logprobs to return per token.
             seed: Optional seed for deterministic sampling (if supported by model).
+            provider: Optional provider configuration (e.g., {"only": ["provider_name"]}).
         Returns:
             Dictionary containing the response and metadata.
         """
@@ -158,7 +166,9 @@ class OpenRouterClient:
         if seed is not None:
             payload["seed"] = seed
 
-        print(payload)
+        # Add provider if provided
+        if provider is not None:
+            payload["provider"] = provider
 
         with httpx.Client(timeout=self.timeout) as client:
             response = client.post(
@@ -167,7 +177,6 @@ class OpenRouterClient:
                 json=payload,
             )
             response.raise_for_status()
-            print(response.json())
             return response.json()
 
     async def sample_multiple_concurrent(
@@ -183,6 +192,7 @@ class OpenRouterClient:
         reasoning: bool = False,
         max_retries: int = 5,
         assistant_prefill: Optional[str] = None,
+        provider: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """Sample multiple responses concurrently for the same prompt with retries.
 
@@ -198,6 +208,7 @@ class OpenRouterClient:
             reasoning: Whether to enable reasoning.
             max_retries: Maximum number of retry attempts for failed requests.
             assistant_prefill: Optional text to prefill the assistant response.
+            provider: Optional provider configuration (e.g., {"only": ["provider_name"]}).
         Returns:
             List of response dictionaries.
         """
@@ -219,19 +230,28 @@ class OpenRouterClient:
                     top_logprobs=top_logprobs,
                     reasoning=reasoning,
                     assistant_prefill=assistant_prefill,
+                    provider=provider,
                 )
                 for _ in range(remaining)
             ]
 
             responses = await asyncio.gather(*tasks, return_exceptions=True)
 
-            # Process responses and count failures
+            # Process responses and validate
             failed_count = 0
             for i, resp in enumerate(responses):
                 if isinstance(resp, Exception):
                     print(f"Warning: Sample failed with error: {resp}")
                     failed_count += 1
                 else:
+                    # Validate logprobs if requested
+                    if logprobs:
+                        has_logprobs = self._validate_logprobs(resp)
+                        if not has_logprobs:
+                            print("Warning: Response missing logprobs, will retry")
+                            failed_count += 1
+                            continue
+
                     valid_responses.append(resp)
 
             # Update remaining count
@@ -252,6 +272,36 @@ class OpenRouterClient:
 
         return valid_responses
 
+    def _validate_logprobs(self, response: Dict[str, Any]) -> bool:
+        """Check if response contains valid logprobs.
+
+        Note: This validates the raw API response before filtering.
+
+        Args:
+            response: Raw API response dictionary.
+
+        Returns:
+            True if response contains logprobs, False otherwise.
+        """
+        if "choices" not in response or not response["choices"]:
+            return False
+
+        # Check first choice for logprobs
+        choice = response["choices"][0]
+        if "logprobs" not in choice:
+            return False
+
+        # Check that logprobs is not None/empty
+        logprobs_data = choice["logprobs"]
+        if logprobs_data is None:
+            return False
+
+        # Check that logprobs contains content
+        if isinstance(logprobs_data, dict) and "content" in logprobs_data:
+            return len(logprobs_data["content"]) > 0
+
+        return False
+
     async def sample_prompts_batch(
         self,
         prompts: List[str],
@@ -267,6 +317,7 @@ class OpenRouterClient:
         filter_fields: bool = True,
         skip_existing: bool = True,
         max_retries: int = 5,
+        provider: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """Sample multiple responses for multiple prompts.
 
@@ -284,6 +335,7 @@ class OpenRouterClient:
             filter_fields: If True, filter out unnecessary fields from responses.
             skip_existing: If True, skip prompts whose output files already exist.
             max_retries: Maximum number of retry attempts for failed requests.
+            provider: Optional provider configuration (e.g., {"only": ["provider_name"]}).
         Returns:
             List of dictionaries with structure:
             {
@@ -320,6 +372,7 @@ class OpenRouterClient:
                 top_logprobs=top_logprobs,
                 reasoning=reasoning,
                 max_retries=max_retries,
+                provider=provider,
             )
 
             sample = {
@@ -341,17 +394,16 @@ class OpenRouterClient:
 def filter_response_fields(
     response: Dict[str, Any], include_logprobs: bool = True
 ) -> Dict[str, Any]:
-    """Filter out unnecessary fields from OpenRouter API responses.
+    """Filter OpenRouter API responses to match Google client format.
 
-    Removes provider-specific metadata and redundant information to reduce
-    file size and improve readability.
+    Flattens the choices array and extracts content to create a simpler structure.
 
     Args:
         response: Raw response dictionary from OpenRouter API.
         include_logprobs: Whether to include logprobs in filtered output.
 
     Returns:
-        Filtered response dictionary with only essential fields.
+        Filtered response dictionary with flattened structure.
     """
     filtered = {}
 
@@ -359,45 +411,41 @@ def filter_response_fields(
     if "model" in response:
         filtered["model"] = response["model"]
 
-    # Keep choices but filter within them
-    if "choices" in response:
-        filtered["choices"] = []
-        for choice in response["choices"]:
-            filtered_choice = {}
+    # Extract content from first choice
+    if "choices" in response and response["choices"]:
+        choice = response["choices"][0]
 
-            # Keep message content
-            if "message" in choice:
-                filtered_choice["message"] = choice["message"]
+        # Extract text from message
+        if "message" in choice and "content" in choice["message"]:
+            filtered["text"] = choice["message"]["content"]
 
-            # Keep finish_reason
-            if "finish_reason" in choice:
-                filtered_choice["finish_reason"] = choice["finish_reason"]
+        # Keep finish_reason
+        if "finish_reason" in choice:
+            filtered["finish_reason"] = choice["finish_reason"]
 
-            # Keep logprobs but filter bytes (only if include_logprobs=True)
-            if include_logprobs and "logprobs" in choice and choice["logprobs"]:
-                # Defensive check: ensure logprobs is a dict before processing
-                if isinstance(choice["logprobs"], dict):
-                    filtered_choice["logprobs"] = {}
-                    if "content" in choice["logprobs"]:
-                        filtered_content = []
-                        for token_data in choice["logprobs"]["content"]:
-                            filtered_token = {
-                                "token": token_data["token"],
-                                "logprob": token_data["logprob"],
-                            }
-                            # Filter top_logprobs
-                            if "top_logprobs" in token_data:
-                                filtered_token["top_logprobs"] = [
-                                    {
-                                        "token": top_token["token"],
-                                        "logprob": top_token["logprob"],
-                                    }
-                                    for top_token in token_data["top_logprobs"]
-                                ]
-                            filtered_content.append(filtered_token)
-                        filtered_choice["logprobs"]["content"] = filtered_content
-
-            filtered["choices"].append(filtered_choice)
+        # Keep logprobs but filter bytes (only if include_logprobs=True)
+        if include_logprobs and "logprobs" in choice and choice["logprobs"]:
+            # Defensive check: ensure logprobs is a dict before processing
+            if isinstance(choice["logprobs"], dict):
+                filtered["logprobs"] = {}
+                if "content" in choice["logprobs"]:
+                    filtered_content = []
+                    for token_data in choice["logprobs"]["content"]:
+                        filtered_token = {
+                            "token": token_data["token"],
+                            "logprob": token_data["logprob"],
+                        }
+                        # Filter top_logprobs
+                        if "top_logprobs" in token_data:
+                            filtered_token["top_logprobs"] = [
+                                {
+                                    "token": top_token["token"],
+                                    "logprob": top_token["logprob"],
+                                }
+                                for top_token in token_data["top_logprobs"]
+                            ]
+                        filtered_content.append(filtered_token)
+                    filtered["logprobs"]["content"] = filtered_content
 
     # Keep usage stats if present
     if "usage" in response:

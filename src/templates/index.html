@@ -275,7 +275,7 @@
                 <label style="display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 0;">
                     <input type="checkbox" id="normalize-by-entropy" {% if normalize_by_entropy_default %}checked{%
                         endif %} onchange="onNormalizeByEntropyChanged()">
-                    Divide KL by entropy (from top-20 logprobs)
+                    Divide KL by sum of entropies (H1 + H2 from top-20 logprobs)
                 </label>
             </div>
 
@@ -394,9 +394,11 @@
         function getDisplayedKL(token) {
             let kl = token.kl_divergence || 0;
             if (normalizeByEntropy && kl > klThreshold) {
-                const entropy = token.entropy;
-                if (entropy !== null && entropy !== undefined && entropy > 0) {
-                    kl = kl / entropy;
+                const entropy1 = token.entropy1;
+                const entropy2 = token.entropy2;
+                const entropySum = (entropy1 || 0) + (entropy2 || 0);
+                if (entropySum > 0) {
+                    kl = kl / entropySum;
                 }
             }
             // Clamp to configured min/max score limits
@@ -636,12 +638,14 @@
                 const color = getKLColor(displayedKL);
                 const tokenText = escapeHtml(token.token || '');
                 const rawKL = (token.kl_divergence || 0);
-                const entropy = token.entropy;
-                const didDivide = normalizeByEntropy && rawKL > klThreshold && entropy !== null && entropy !== undefined && entropy > 0;
+                const entropy1 = token.entropy1;
+                const entropy2 = token.entropy2;
+                const entropySum = (entropy1 || 0) + (entropy2 || 0);
+                const didDivide = normalizeByEntropy && rawKL > klThreshold && entropySum > 0;
                 if (didDivide) {
-                    html += `<span class="token" style="background-color: ${color};" data-kl="KL/H: ${displayedKL.toFixed(6)} (KL: ${rawKL.toFixed(6)}, H: ${entropy.toFixed(6)})">${tokenText}</span>`;
+                    html += `<span class="token" style="background-color: ${color};" data-kl="KL/(H1+H2): ${displayedKL.toFixed(6)} (KL: ${rawKL.toFixed(6)}, H1: ${entropy1.toFixed(6)}, H2: ${entropy2.toFixed(6)})">${tokenText}</span>`;
                 } else if (normalizeByEntropy) {
-                    const reason = rawKL <= klThreshold ? `KL<=${klThreshold}` : 'H: N/A';
+                    const reason = rawKL <= klThreshold ? `KL<=${klThreshold}` : 'H1+H2: N/A';
                     html += `<span class="token" style="background-color: ${color};" data-kl="KL: ${rawKL.toFixed(6)} (${reason})">${tokenText}</span>`;
                 } else {
                     html += `<span class="token" style="background-color: ${color};" data-kl="KL: ${rawKL.toFixed(6)}">${tokenText}</span>`;
@@ -669,7 +673,7 @@
 
             // Update legend labels with global KL scale values
             const scaleNote = `clamped [${minScore}, ${maxScore}]`;
-            document.getElementById('legend-title').textContent = normalizeByEntropy ? `Global KL/H Scale (${scaleNote}; KL>${klThreshold}):` : `Global KL Scale (${scaleNote}):`;
+            document.getElementById('legend-title').textContent = normalizeByEntropy ? `Global KL/(H1+H2) Scale (${scaleNote}; KL>${klThreshold}):` : `Global KL Scale (${scaleNote}):`;
             document.getElementById('legend-min').textContent = globalMinKL.toFixed(6);
             document.getElementById('legend-max').textContent = globalMaxKL.toFixed(6);
 
@@ -678,8 +682,8 @@
             // Display metadata
             const values = tokenDetails.map(t => getDisplayedKL(t));
             const meanDisplayed = values.length ? (values.reduce((a, b) => a + b, 0) / values.length) : 0;
-            const responseMeanLabel = normalizeByEntropy ? 'Mean KL/H' : 'Mean KL';
-            const rangeLabel = normalizeByEntropy ? 'Global KL/H Range' : 'Global KL Range';
+            const responseMeanLabel = normalizeByEntropy ? 'Mean KL/(H1+H2)' : 'Mean KL';
+            const rangeLabel = normalizeByEntropy ? 'Global KL/(H1+H2) Range' : 'Global KL Range';
             const metadata = [
                 `Model 1: ${currentData.model1 || 'N/A'}`,
                 `Model 2: ${currentData.model2 || 'N/A'}`,
