@@ -1,5 +1,5 @@
 # ABOUTME: Calculate KL divergence using OpenRouter API.
-# ABOUTME: Uses assistant prefill to get all token logprobs in a single request.
+# ABOUTME: Makes one request per token position to get logprobs.
 
 import asyncio
 import json
@@ -40,35 +40,32 @@ class KLDivergenceOpenRouterCalculator:
         self.provider = provider
         self.client = OpenRouterClient(api_key=api_key, timeout=timeout)
 
-    async def _get_all_token_logprobs(
+    async def _get_single_token_logprobs(
         self,
         prompt: str,
         prefill_text: str,
         model_id: str,
+        position: int,
         top_logprobs: int = 20,
-    ) -> Optional[List[Dict[str, Any]]]:
-        """Get logprobs for all tokens in the prefilled text.
+    ) -> Optional[Dict[str, Any]]:
+        """Get logprobs for a single token position.
 
         Args:
             prompt: User prompt.
-            prefill_text: Text to prefill the assistant response.
+            prefill_text: Text to prefill the assistant response (tokens before this position).
             model_id: Model identifier to use for sampling.
+            position: Token position being sampled.
             top_logprobs: Number of top logprobs to request.
 
         Returns:
-            List of token dictionaries with logprobs, or None if request failed.
+            Dictionary with position and logprobs data, or None if request failed.
         """
         try:
-            # Estimate max_tokens needed (conservative: ~2 chars per token)
-            estimated_tokens = max(len(prefill_text) // 2, 1)
-            # Cap at reasonable maximum to avoid excessive costs
-            max_tokens = min(estimated_tokens, 4096)
-
             response = await self.client.sample_response(
                 prompt=prompt,
                 model=model_id,
-                max_tokens=max_tokens,
-                temperature=0.0,
+                max_tokens=1,  # Only generate 1 token
+                temperature=1.0,
                 logprobs=True,
                 top_logprobs=top_logprobs,
                 assistant_prefill=prefill_text,
@@ -87,55 +84,115 @@ class KLDivergenceOpenRouterCalculator:
             if "content" not in logprobs_data or not logprobs_data["content"]:
                 return None
 
-            # Get all tokens' logprobs from the prefill
-            all_tokens = []
-            for token_data in logprobs_data["content"]:
-                all_tokens.append(
-                    {
-                        "token": token_data["token"],
-                        "logprob": token_data["logprob"],
-                        "top_logprobs": [
-                            {"token": t["token"], "logprob": t["logprob"]}
-                            for t in token_data.get("top_logprobs", [])
-                        ],
-                    }
-                )
+            # Get first (and only) token's logprobs
+            token_data = logprobs_data["content"][0]
 
-            return all_tokens
+            return {
+                "position": position,
+                "token": token_data["token"],
+                "logprob": token_data["logprob"],
+                "top_logprobs": [
+                    {"token": t["token"], "logprob": t["logprob"]}
+                    for t in token_data.get("top_logprobs", [])
+                ],
+            }
 
         except Exception as e:
-            print(f"    Warning: Failed to get logprobs: {e}")
+            print(f"    Warning: Failed to get logprobs for position {position}: {e}")
             return None
+
+    async def _get_all_token_logprobs(
+        self,
+        prompt: str,
+        target_tokens: List[Dict[str, Any]],
+        model_id: str,
+        top_logprobs: int = 20,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Get logprobs for all tokens by making one request per token position.
+
+        Args:
+            prompt: User prompt.
+            target_tokens: List of target token data (must have 'token' field).
+            model_id: Model identifier to use for sampling.
+            top_logprobs: Number of top logprobs to request.
+
+        Returns:
+            List of token dictionaries with logprobs, or None if requests failed.
+        """
+        # Create tasks for all token positions
+        tasks = []
+        for i, target_token_data in enumerate(target_tokens):
+            # Build prefill from tokens up to position i (not including i)
+            prefill_text = "".join([t["token"] for t in target_tokens[:i]])
+
+            task = self._get_single_token_logprobs(
+                prompt=prompt,
+                prefill_text=prefill_text,
+                model_id=model_id,
+                position=i,
+                top_logprobs=top_logprobs,
+            )
+            tasks.append(task)
+
+        # Execute all requests concurrently
+        results = await asyncio.gather(*tasks)
+
+        # Check if any failed
+        if any(r is None for r in results):
+            failed_count = sum(1 for r in results if r is None)
+            print(
+                f"    Warning: {failed_count}/{len(results)} token positions failed to get logprobs"
+            )
+            return None
+
+        # Sort by position to ensure correct order
+        results = sorted(results, key=lambda x: x["position"])
+
+        # Convert to expected format
+        all_tokens = []
+        for result in results:
+            all_tokens.append(
+                {
+                    "token": result["token"],
+                    "logprob": result["logprob"],
+                    "top_logprobs": result["top_logprobs"],
+                }
+            )
+
+        return all_tokens
 
     async def get_logprobs_from_both_models(
         self,
         prompt: str,
-        response_text: str,
+        target_tokens: List[Dict[str, Any]],
         top_logprobs: int = 20,
     ) -> Tuple[Optional[List[Dict[str, Any]]], Optional[List[Dict[str, Any]]]]:
-        """Get logprobs from both models for the same response text.
+        """Get logprobs from both models for the same token sequence.
 
         Args:
             prompt: User prompt.
-            response_text: Response text to prefill.
+            target_tokens: Target token sequence to get logprobs for.
             top_logprobs: Number of top logprobs to request.
 
         Returns:
             Tuple of (model1_logprobs, model2_logprobs).
         """
-        print(f"    Sampling logprobs from both models for response...")
+        num_tokens = len(target_tokens)
+        print(
+            f"    Sampling logprobs from both models for {num_tokens} tokens (one request per token)..."
+        )
 
         # Get logprobs from both models concurrently
         model1_task = self._get_all_token_logprobs(
             prompt=prompt,
-            prefill_text=response_text,
+            target_tokens=target_tokens,
             model_id=self.model1_id,
             top_logprobs=top_logprobs,
         )
 
         model2_task = self._get_all_token_logprobs(
             prompt=prompt,
-            prefill_text=response_text,
+            target_tokens=target_tokens,
             model_id=self.model2_id,
             top_logprobs=top_logprobs,
         )
@@ -298,7 +355,7 @@ class KLDivergenceOpenRouterCalculator:
 
         Args:
             prompt: Original user prompt.
-            response_data: Response data containing text field (logprobs are disregarded).
+            response_data: Response data containing text and logprobs fields.
             top_logprobs: Number of top logprobs to request.
             response_idx: Optional response index for progress messages.
 
@@ -306,6 +363,7 @@ class KLDivergenceOpenRouterCalculator:
             Dictionary with KL divergence results.
         """
         text = response_data.get("text", "")
+        original_logprobs = response_data.get("logprobs", {}).get("content", [])
 
         if not text:
             return {
@@ -313,14 +371,22 @@ class KLDivergenceOpenRouterCalculator:
                 "text": text,
             }
 
+        if not original_logprobs:
+            return {
+                "error": "Missing logprobs in response data - need token sequence",
+                "text": text,
+            }
+
+        num_tokens = len(original_logprobs)
+
         if response_idx is not None:
-            print(f"  Processing response {response_idx + 1}")
+            print(f"  Processing response {response_idx + 1}: {num_tokens} tokens")
 
         # Get logprobs from both models
         try:
             model1_logprobs, model2_logprobs = await self.get_logprobs_from_both_models(
                 prompt=prompt,
-                response_text=text,
+                target_tokens=original_logprobs,
                 top_logprobs=top_logprobs,
             )
         except Exception as e:

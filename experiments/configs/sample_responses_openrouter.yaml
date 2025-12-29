@@ -48,7 +48,7 @@ sampling:
   temperature: 1.0           # Sampling temperature
   top_p: 1.0                 # Nucleus sampling parameter
   logprobs: true            # Whether to return log probabilities
-  top_logprobs: 20            # Number of top logprobs to return per token
+  top_logprobs: 5            # Number of top logprobs to return per token
   max_tokens_reasoning: 0            # Maximum tokens to generate for reasoning
   reasoning: false            # Whether to enable reasoning
   max_retries: 5             # Maximum retry attempts for failed requests

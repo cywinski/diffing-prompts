@@ -110,12 +110,14 @@ class OpenRouterClient:
             payload["provider"] = provider
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
+            print(payload)
             response = await client.post(
                 f"{self.base_url}/chat/completions",
                 headers=self.headers,
                 json=payload,
             )
             response.raise_for_status()
+            print(response.json())
             return response.json()
 
     def sample(

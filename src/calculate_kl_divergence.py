@@ -396,6 +396,7 @@ class KLDivergenceCalculator:
         top_logprobs: int = 20,
         response_idx: Optional[int] = None,
         max_concurrent: int = 10,
+        model1_calculator: Optional["KLDivergenceCalculator"] = None,
     ) -> Dict[str, Any]:
         """Process a single response to calculate KL divergence.
 
@@ -405,6 +406,7 @@ class KLDivergenceCalculator:
             top_logprobs: Number of top logprobs to request.
             response_idx: Optional response index for progress messages.
             max_concurrent: Maximum number of concurrent API calls.
+            model1_calculator: Optional calculator for model 1 to resample logprobs.
 
         Returns:
             Dictionary with KL divergence results.
@@ -413,18 +415,57 @@ class KLDivergenceCalculator:
         text = response_data.get("text", "")
         model1_logprobs = response_data.get("logprobs", {}).get("content", [])
 
-        if not text or not model1_logprobs:
+        if not text:
             return {
                 "response_idx": response_idx,
                 "text": text,
-                "error": "Missing text or logprobs in response data",
+                "error": "Missing text in response data",
             }
 
-        # Show progress
-        if response_idx is not None:
-            print(
-                f"  Processing response {response_idx + 1}: {len(model1_logprobs)} tokens"
-            )
+        # If model1_calculator provided, resample logprobs from model 1
+        if model1_calculator is not None:
+            if not model1_logprobs:
+                return {
+                    "response_idx": response_idx,
+                    "text": text,
+                    "error": "Missing tokens in response data for resampling",
+                }
+
+            # Show progress
+            if response_idx is not None:
+                print(
+                    f"  Processing response {response_idx + 1}: {len(model1_logprobs)} tokens"
+                )
+                print(f"    Resampling logprobs from model 1...")
+
+            # Resample logprobs from model 1
+            try:
+                model1_logprobs = await model1_calculator.get_iterative_logprobs(
+                    prompt=prompt,
+                    target_tokens=model1_logprobs,
+                    top_logprobs=top_logprobs,
+                    max_concurrent=max_concurrent,
+                )
+            except Exception as e:
+                return {
+                    "response_idx": response_idx,
+                    "text": text,
+                    "error": f"Failed to resample model 1 logprobs: {str(e)}",
+                }
+        else:
+            # Use logprobs from JSON file
+            if not model1_logprobs:
+                return {
+                    "response_idx": response_idx,
+                    "text": text,
+                    "error": "Missing logprobs in response data",
+                }
+
+            # Show progress
+            if response_idx is not None:
+                print(
+                    f"  Processing response {response_idx + 1}: {len(model1_logprobs)} tokens"
+                )
 
         # Get logprobs from model 2 using iterative prefilling with Model 1's tokens
         try:
@@ -463,6 +504,8 @@ class KLDivergenceCalculator:
             "num_tokens": len(kl_divergences),
             "kl_per_token": kl_divergences,
             "token_details": token_details,
+            "model1_logprobs": model1_logprobs,
+            "model2_logprobs": model2_logprobs,
             "statistics": {
                 "mean_kl": float(np.mean(kl_array)),
                 "median_kl": float(np.median(kl_array)),
@@ -482,15 +525,17 @@ async def process_json_file(
     output_dir: Path,
     top_logprobs: int = 20,
     max_concurrent: int = 10,
+    model1_calculator: Optional[KLDivergenceCalculator] = None,
 ) -> None:
     """Process a single JSON file to calculate KL divergences.
 
     Args:
         json_path: Path to input JSON file.
-        calculator: KLDivergenceCalculator instance.
+        calculator: KLDivergenceCalculator instance for model 2.
         output_dir: Output directory for results.
         top_logprobs: Number of top logprobs to request.
         max_concurrent: Maximum number of concurrent API calls per response.
+        model1_calculator: Optional calculator for model 1 to resample logprobs.
     """
     # Load JSON file
     with open(json_path, "r") as f:
@@ -514,6 +559,7 @@ async def process_json_file(
             top_logprobs=top_logprobs,
             response_idx=i,
             max_concurrent=max_concurrent,
+            model1_calculator=model1_calculator,
         )
         results.append(result)
 
@@ -523,7 +569,8 @@ async def process_json_file(
     # Save results
     output_data = {
         "prompt": prompt,
-        "model1": model1_name,
+        "model1": model1_calculator.model_id if model1_calculator else model1_name,
+        "model1_resampled": model1_calculator is not None,
         "model2": calculator.model_id,
         "num_responses": len(results),
         "responses": results,
@@ -549,6 +596,7 @@ async def process_directory(
     pattern: str = "*.json",
     max_concurrent: int = 10,
     max_files: Optional[int] = None,
+    model1_id: Optional[str] = None,
 ) -> None:
     """Process all JSON files in a directory to calculate KL divergences.
 
@@ -562,6 +610,7 @@ async def process_directory(
         pattern: Glob pattern for JSON files.
         max_concurrent: Maximum number of concurrent API calls per response.
         max_files: Maximum number of files to process (None for all).
+        model1_id: Optional model identifier to resample model 1 logprobs.
     """
     input_path = Path(input_dir)
     output_path = Path(output_dir)
@@ -579,14 +628,27 @@ async def process_directory(
     else:
         print(f"Found {len(json_files)} JSON files in {input_dir}")
 
-    # Create calculator
+    # Create calculator for model 2
     calculator = KLDivergenceCalculator(
         model_id=model2_id,
         project_id=project_id,
         location=location,
     )
 
-    print(f"Comparing against model: {model2_id}")
+    # Create calculator for model 1 if resampling requested
+    model1_calculator = None
+    if model1_id is not None:
+        model1_calculator = KLDivergenceCalculator(
+            model_id=model1_id,
+            project_id=project_id,
+            location=location,
+        )
+        print(f"Model 1 (resampling): {model1_id}")
+        print(f"Model 2 (comparison): {model2_id}")
+    else:
+        print(f"Model 1: from JSON files")
+        print(f"Model 2 (comparison): {model2_id}")
+
     print(f"Output directory: {output_dir}\n")
 
     # Process each file
@@ -598,6 +660,7 @@ async def process_directory(
                 output_dir=output_path,
                 top_logprobs=top_logprobs,
                 max_concurrent=max_concurrent,
+                model1_calculator=model1_calculator,
             )
         except Exception as e:
             print(f"Error processing {json_file.name}: {e}")
@@ -624,6 +687,12 @@ def main():
         type=str,
         required=True,
         help="Directory to save KL divergence results",
+    )
+    parser.add_argument(
+        "--model1",
+        type=str,
+        default=None,
+        help="Model identifier for model 1 (optional, to resample logprobs)",
     )
     parser.add_argument(
         "--model2",
@@ -681,6 +750,7 @@ def main():
             pattern=args.pattern,
             max_concurrent=args.max_concurrent,
             max_files=args.max_files,
+            model1_id=args.model1,
         )
     )
 

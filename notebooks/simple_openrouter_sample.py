@@ -3,18 +3,18 @@
 
 # %%
 # Parameters
-model = "openai/gpt-4o-mini"
-prompt = "What is the capital of France?"
+model = "qwen/qwen3-32b"
+prompt = "Quality assurance job role qualifications"
 
 # Assistant prefill: forces the assistant to start its response with this text
 # This is useful for:
 # 1. Constraining response format
 # 2. Getting logprobs for a specific completion
 # 3. KL divergence calculations (comparing how different models complete the same text)
-assistant_prefill = "The capital of France is"  # Set to None to disable
+assistant_prefill = "The"  # Set to None to disable
 
-max_tokens = 1
-temperature = 0.7
+max_tokens = 5
+temperature = 1.0
 top_logprobs = 5
 
 # %%
@@ -27,6 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from dotenv import load_dotenv
+
 from openrouter_client import OpenRouterClient
 
 load_dotenv()
@@ -56,8 +57,10 @@ async def sample_single():
         max_tokens=max_tokens,
         temperature=temperature,
         logprobs=True,
+        reasoning=False,
         top_logprobs=top_logprobs,
         assistant_prefill=assistant_prefill,
+        provider={"only": ["fireworks"]},
     )
 
     # Extract the text
@@ -73,9 +76,9 @@ async def sample_single():
     logprobs_data = response["choices"][0]["logprobs"]["content"]
 
     if assistant_prefill:
-        print(f"Token logprobs (includes prefill + generated tokens):")
+        print("Token logprobs (includes prefill + generated tokens):")
     else:
-        print(f"Token logprobs:")
+        print("Token logprobs:")
     print(f"Total tokens: {len(logprobs_data)}\n")
 
     # Show first 15 tokens

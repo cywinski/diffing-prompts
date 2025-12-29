@@ -26,7 +26,7 @@ dataset:
 # Models to sample from (list of arbitrary length)
 # Model IDs from Google Gemini: https://cloud.google.com/vertex-ai/docs/generative-ai/learn/models
 models:
-  - "gemini-2.5-flash-lite-preview-09-2025"
+  - "gemini-2.5-flash-lite"
   # - "gemini-2.5-flash-preview-04-2025"
   # - "gemini-2.5-pro-preview-03-2025"
   # Add more models as needed
@@ -43,10 +43,10 @@ sampling:
   temperature: 1.0                # Sampling temperature
   top_p: 1.0                      # Nucleus sampling parameter
   response_logprobs: true         # Whether to return log probabilities
-  logprobs: 20                     # Number of top logprobs to return per token (1-20)
+  logprobs: 5                     # Number of top logprobs to return per token (1-20)
   max_retries: 5                  # Maximum retry attempts for failed requests
 
 # Output configuration
 output:
-  base_dir: "experiments/results"
-  experiment_name: "gemini-2.5-flash-lite-preview-09-2025-mini-exp"
+  base_dir: "experiments/test_gemini_results"
+  experiment_name: "gemini-2.5-flash-lite"
