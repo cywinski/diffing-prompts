@@ -1,0 +1,34 @@
+# Configuration for sampling responses from extracted prompts
+
+# Dataset configuration
+dataset:
+  source: "file"
+  file_path: "extracted_prompts.txt"  # Path to JSON file with prompts (array of strings)
+  # prompt_field is not needed when JSON is a direct array of strings
+  num_prompts: null  # Number of prompts to sample (set to null for all prompts)
+  min_length: null  # Minimum prompt length in characters (null for no minimum)
+  max_length: null  # Maximum prompt length in characters (null for no maximum)
+
+# Models to sample from
+models:
+  - "unsloth/Meta-Llama-3.1-70B-Instruct-bnb-4bit"
+
+# Sampling parameters
+sampling:
+  num_samples_per_prompt: 5  # Number of samples to generate per prompt
+  max_tokens: 4096  # Maximum tokens to generate
+  temperature: 1.0  # Sampling temperature (higher = more random)
+  top_p: 1.0  # Nucleus sampling parameter
+  logprobs: true  # Whether to return log probabilities
+  top_logprobs: 5  # Number of top logprobs to return per token
+  reasoning: false  # Enable reasoning for supported models
+  max_retries: 5  # Maximum number of retry attempts for failed requests
+
+# API configuration
+api:
+  base_url: "http://0.0.0.0:8000/v1" # OpenRouter API base URL
+
+# Output configuration
+output:
+  base_dir: "experiments/results/llama-3-70b-diff"
+  experiment_name: "responses_Meta-Llama-3.1-70B"

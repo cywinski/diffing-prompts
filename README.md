@@ -34,3 +34,8 @@ python src/sample_high_kl_responses.py --config experiments/configs/sample_high_
 ```bash
 python src/llm_judge.py --config experiments/configs/llm_judge.yaml
 ```
+
+## Sampling from models served locally via VLLM
+```bash
+python src/sample_responses.py --config experiments/configs/sample_responses_openrouter_vllm_served.yaml
+ ```
