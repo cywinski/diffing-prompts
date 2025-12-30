@@ -12,11 +12,12 @@ dataset:
 # Models to sample from
 models:
   - "unsloth/Meta-Llama-3.1-70B-Instruct-bnb-4bit"
+  # - "unsloth/Llama-3.3-70B-Instruct-bnb-4bit"
 
 # Sampling parameters
 sampling:
-  num_samples_per_prompt: 5  # Number of samples to generate per prompt
-  max_tokens: 4096  # Maximum tokens to generate
+  num_samples_per_prompt: 1  # Number of samples to generate per prompt
+  max_tokens: 2048  # Maximum tokens to generate
   temperature: 1.0  # Sampling temperature (higher = more random)
   top_p: 1.0  # Nucleus sampling parameter
   logprobs: true  # Whether to return log probabilities

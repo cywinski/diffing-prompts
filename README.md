@@ -36,6 +36,25 @@ python src/llm_judge.py --config experiments/configs/llm_judge.yaml
 ```
 
 ## Sampling from models served locally via VLLM
+
+Serve the models via VLLM:
+```bash
+vllm serve unsloth/Meta-Llama-3.1-70B-Instruct-bnb-4bit --max-model-len 8192
+```
+
+Sample:
+
 ```bash
 python src/sample_responses.py --config experiments/configs/sample_responses_openrouter_vllm_served.yaml
+ ```
+
+
+Calculate KL divergence (in 2 stages):
+
+```bash
+python src/calculate_kl_divergence_vllm.py --input_dir experiments/results/llama-3-70b-diff/responses_Meta-Llama-3.1-70B/ --output_dir experiments/results/llama-3-70b-diff/kl --model_name unsloth/Meta-Llama-3.1-70B-Instruct-bnb-4bit --mode model1
+ ```
+
+```bash
+python src/calculate_kl_divergence_vllm.py --input_dir experiments/results/llama-3-70b-diff/kl/ --output_dir experiments/results/llama-3-70b-diff/kl_final_final --model_name unsloth/Llama-3.3-70B-Instruct-bnb-4bit --mode model2
  ```

@@ -62,6 +62,7 @@ class OpenRouterClient:
         reasoning: bool = False,
         assistant_prefill: Optional[str] = None,
         provider: Optional[Dict[str, Any]] = None,
+        extra_body: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Sample a single response from the model.
 
@@ -77,6 +78,7 @@ class OpenRouterClient:
             reasoning: Whether to enable reasoning.
             assistant_prefill: Optional text to prefill the assistant response.
             provider: Optional provider configuration (e.g., {"only": ["provider_name"]}).
+            extra_body: Optional extra fields to merge into the request payload.
         Returns:
             Dictionary containing the response and metadata.
         """
@@ -108,6 +110,10 @@ class OpenRouterClient:
         # Add provider if provided
         if provider is not None:
             payload["provider"] = provider
+
+        # Merge extra_body fields into payload
+        if extra_body is not None:
+            payload.update(extra_body)
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             print(payload)
