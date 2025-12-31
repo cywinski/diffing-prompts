@@ -3,10 +3,10 @@
 # Input directories
 input:
   # Directory containing Model A responses
-  model_a_dir: "experiments/results_final/high_kl_responses_preview"
+  model_a_dir: "experiments/results/llama-3-70b-diff/high_kl_responses-3.1_v2"
 
   # Directory containing Model B responses
-  model_b_dir: "experiments/results_final/high_kl_responses_stable"
+  model_b_dir: "experiments/results/llama-3-70b-diff/high_kl_responses-3.3_v2"
 
 # API configuration (optional - will use .env if not specified)
 api:
@@ -19,7 +19,7 @@ judge:
   model: "google/gemini-2.5-flash"
 
   # Number of hypotheses to generate per pair
-  num_hypotheses: 6
+  num_hypotheses: 2
 
   # Maximum tokens for judge response
   max_tokens: 2000
@@ -32,5 +32,5 @@ judge:
 
 # Output configuration
 output:
-  base_dir: "experiments/results_final"
-  experiment_name: "judge_comparisons"
+  base_dir: "experiments/results/llama-3-70b-diff"
+  experiment_name: "judge_comparisons_v2"

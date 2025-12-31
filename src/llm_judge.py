@@ -106,6 +106,8 @@ def extract_responses(data: dict) -> list[str]:
     responses = []
     for response in data["responses"]:
         content = response["choices"][0]["message"]["content"]
+        # Replace llama tokenizer special characters with actual characters
+        content = content.replace("Ġ", " ").replace("Ċ", "\n")
         responses.append(content)
     return responses
 
@@ -148,6 +150,8 @@ async def judge_response_pair(
     # Get prompt and prefill from Model A data
     user_prompt = model_a_data["prompt"]
     assistant_prefill = model_a_data["assistant_prefill"]
+    # Replace llama tokenizer special characters
+    assistant_prefill = assistant_prefill.replace("Ġ", " ").replace("Ċ", "\n")
 
     # Format the judge prompt
     judge_prompt = format_judge_prompt(

@@ -150,7 +150,6 @@ class KLDivergenceVLLMCalculator:
                             result["position"] = position
                             # Always use the original token from input, not the API response
                             result["token"] = target_tokens[position]["token"]
-                            result["prefill_text"] = prefill_text
                             return result
 
                         if retry < max_retries - 1:
@@ -167,7 +166,6 @@ class KLDivergenceVLLMCalculator:
                                 "logprob": None,
                                 "top_logprobs": [],
                                 "position": position,
-                                "prefill_text": prefill_text,
                                 "error": "Failed to get valid logprobs after retries",
                             }
                     except Exception as e:

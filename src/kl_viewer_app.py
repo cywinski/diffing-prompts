@@ -19,13 +19,33 @@ def get_json_files(directory: str):
     return sorted([f.name for f in dir_path.glob("*.json")])
 
 
+def replace_llama_special_chars(text: str) -> str:
+    """Replace Llama tokenizer special characters with actual characters.
+
+    Llama uses Ġ (\u0120) for spaces and Ċ (\u010a) for newlines.
+    """
+    return text.replace("\u0120", " ").replace("\u010a", "\n")
+
+
+def process_tokens_in_data(data):
+    """Recursively process data to replace Llama special chars in token strings."""
+    if isinstance(data, str):
+        return replace_llama_special_chars(data)
+    elif isinstance(data, list):
+        return [process_tokens_in_data(item) for item in data]
+    elif isinstance(data, dict):
+        return {key: process_tokens_in_data(value) for key, value in data.items()}
+    return data
+
+
 def load_json_file(directory: str, filename: str):
     """Load a JSON file from the directory."""
     file_path = Path(directory) / filename
     if not file_path.exists():
         return None
     with open(file_path, "r") as f:
-        return json.load(f)
+        data = json.load(f)
+    return process_tokens_in_data(data)
 
 
 @app.route("/")

@@ -201,6 +201,7 @@ class OpenRouterClient:
         max_retries: int = 5,
         assistant_prefill: Optional[str] = None,
         provider: Optional[Dict[str, Any]] = None,
+        extra_body: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """Sample multiple responses concurrently for the same prompt with retries.
 
@@ -217,6 +218,7 @@ class OpenRouterClient:
             max_retries: Maximum number of retry attempts for failed requests.
             assistant_prefill: Optional text to prefill the assistant response.
             provider: Optional provider configuration (e.g., {"only": ["provider_name"]}).
+            extra_body: Optional extra fields to merge into the request payload.
         Returns:
             List of response dictionaries.
         """
@@ -239,6 +241,7 @@ class OpenRouterClient:
                     reasoning=reasoning,
                     assistant_prefill=assistant_prefill,
                     provider=provider,
+                    extra_body=extra_body,
                 )
                 for _ in range(remaining)
             ]
