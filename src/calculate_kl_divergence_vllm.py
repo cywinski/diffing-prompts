@@ -134,8 +134,7 @@ class KLDivergenceVLLMCalculator:
             async with semaphore:
                 # Build prefill from tokens up to this position
                 prefill_text = "".join([t["token"] for t in target_tokens[:position]])
-                if position == 0 or position == 1:
-                    print(f"Prefill text: {prefill_text}")
+                prefill_text = prefill_text.replace("Ġ", " ").replace("Ċ", "\n")
 
                 for retry in range(max_retries):
                     try:
@@ -183,7 +182,6 @@ class KLDivergenceVLLMCalculator:
                                 "logprob": None,
                                 "top_logprobs": [],
                                 "position": position,
-                                "prefill_text": prefill_text,
                                 "error": str(e),
                             }
 
@@ -192,7 +190,6 @@ class KLDivergenceVLLMCalculator:
                     "logprob": None,
                     "top_logprobs": [],
                     "position": position,
-                    "prefill_text": prefill_text,
                     "error": "Unknown error",
                 }
 
